@@ -1,0 +1,88 @@
+{
+  "_comment": "Copy to trifecta.json next to SKILL.md, or point TRIFECTA_CONFIG at your copy. Replace every id with one from your own orchestrator_capabilities catalog.",
+  "coordinator": {
+    "label": "Coordinator account",
+    "providerInstanceId": "claudeAgent_coordinator",
+    "usage": "coordinator-claude"
+  },
+  "builders": [
+    {
+      "label": "Builder seat",
+      "providerInstanceId": "claudeAgent_builder",
+      "model": "claude-opus-5-5",
+      "options": {"effort": "high"},
+      "usage": "builder-claude",
+      "switch_at_percent": 85
+    },
+    {
+      "label": "Coordinator account (fallback)",
+      "providerInstanceId": "claudeAgent_coordinator",
+      "model": "claude-opus-5-5",
+      "options": {"effort": "high"},
+      "usage": "coordinator-claude",
+      "switch_at_percent": 85
+    }
+  ],
+  "reviewers": [
+    {
+      "label": "GPT reviewer",
+      "providerInstanceId": "codex",
+      "model": "gpt-6.1-sol",
+      "options": {"reasoningEffort": "high"},
+      "usage": "reviewer-codex",
+      "weight": 7
+    },
+    {
+      "label": "Claude reviewer",
+      "providerInstanceId": "claudeAgent_builder",
+      "model": "claude-opus-5-5",
+      "options": {"effort": "high"},
+      "usage": "builder-claude",
+      "weight": 3
+    }
+  ],
+  "max_parallel_builders": 2,
+  "never_use": ["claudeAgent_direct", "codex_old_seat"],
+  "stale_minutes": 20,
+  "usage_sources": {
+    "coordinator-claude": {
+      "type": "cliproxyapi",
+      "url": "http://127.0.0.1:8317",
+      "key_file": "~/.config/trifecta/main-gateway.json",
+      "provider": "claude",
+      "used_unit": "fraction",
+      "fields": {
+        "five_hour_used": "Anthropic-Ratelimit-Unified-5h-Utilization",
+        "five_hour_reset": "Anthropic-Ratelimit-Unified-5h-Reset",
+        "weekly_used": "Anthropic-Ratelimit-Unified-7d-Utilization",
+        "weekly_reset": "Anthropic-Ratelimit-Unified-7d-Reset",
+        "status": "Anthropic-Ratelimit-Unified-Status"
+      }
+    },
+    "builder-claude": {
+      "type": "cliproxyapi",
+      "url": "http://127.0.0.1:8318",
+      "key_file": "~/.config/trifecta/builder-gateway.json",
+      "provider": "claude",
+      "used_unit": "fraction",
+      "fields": {
+        "five_hour_used": "Anthropic-Ratelimit-Unified-5h-Utilization",
+        "five_hour_reset": "Anthropic-Ratelimit-Unified-5h-Reset",
+        "weekly_used": "Anthropic-Ratelimit-Unified-7d-Utilization",
+        "weekly_reset": "Anthropic-Ratelimit-Unified-7d-Reset",
+        "status": "Anthropic-Ratelimit-Unified-Status"
+      }
+    },
+    "reviewer-codex": {
+      "type": "cliproxyapi",
+      "url": "http://127.0.0.1:8317",
+      "key_file": "~/.config/trifecta/main-gateway.json",
+      "provider": "codex",
+      "used_unit": "percent",
+      "fields": {
+        "weekly_used": "X-Codex-Primary-Used-Percent",
+        "weekly_reset": "X-Codex-Primary-Reset-At"
+      }
+    }
+  }
+}

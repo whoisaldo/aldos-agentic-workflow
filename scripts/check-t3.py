@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import uuid
 
-from fleetlib import ROOT, atomic_write, encode, http_json, read_json, state_dir
+from fleetlib import ROOT, atomic_write, encode, http_json, load_config, read_json, state_dir
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
     args = parser.parse_args()
     if not args.run.replace("-", "").isalnum():
         raise ValueError("Use letters, digits and hyphens for the run name")
-    config = read_json(ROOT / "fleet.json")
+    config = load_config()
     state = state_dir(config)
     key = read_json(state / "private/t3-session.json")["access_token"]
     record = state / "private" / ("t3-check-" + args.run + ".json")

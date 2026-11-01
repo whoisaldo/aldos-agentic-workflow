@@ -1,0 +1,31 @@
+#!/bin/sh
+# Block a push when the public-source check fails on the commits it would publish.
+# Enable once per clone: git config core.hooksPath .githooks
+# Name a private deny-list kept outside this repository in PUBLIC_CHECK_DENYLIST,
+# or once per clone with: git config publiccheck.denylist PATH
+GIT_NO_REPLACE_OBJECTS=1  # git push ignores replace refs, so every git call here does too
+export GIT_NO_REPLACE_OBJECTS
+destination=$2  # git passes the remote name (or a bare URL) and the push URL
+cd "$(git rev-parse --show-toplevel)" || exit 1
+set --
+tips=
+# git sends one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac  # a delete publishes nothing, not even its name
+  # An update, force push, new branch or unfetched remote tip all publish what the destination lacks.
+  # A tag object in local_sha is checked with its target. Both ref names are checked too.
+  tips="$tips $local_sha"
+  set -- "$@" --ref-name "$local_ref" --ref-name "$remote_ref"
+done
+[ -n "$tips" ] || exit 0
+# Only the destination's own listing counts as published, never local tracking refs. The checker lists it
+# without prompting and within a timeout, and checks everything the tips reach when it cannot.
+set -- --secrets "--destination=$destination" --range "${tips# }" "$@"
+denylist=${PUBLIC_CHECK_DENYLIST:-$(git config --type=path --get publiccheck.denylist)}
+if [ -n "$denylist" ]; then
+  set -- "$@" --denylist "$denylist"
+fi
+if ! python3 scripts/check-public.py "$@"; then
+  echo "pre-push: public check failed; push blocked." >&2
+  exit 1
+fi

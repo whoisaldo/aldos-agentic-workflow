@@ -15,8 +15,8 @@ raster art. This skill drives it, harvests the PNG, and hands the file back so
 you can wire it into the project.
 
 Auth is the user's existing ChatGPT OAuth login in `codex` — **no
-`OPENAI_API_KEY` is needed, and image generation is effectively unmetered on
-their plan.** Prefer generating a real asset over faking one.
+`OPENAI_API_KEY` is needed. Image generation runs on that Codex sign-in and
+uses its quota.** Prefer generating a real asset over faking one.
 
 ## When to use this skill
 

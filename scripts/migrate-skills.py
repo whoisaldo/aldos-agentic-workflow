@@ -10,9 +10,9 @@ import os
 from pathlib import Path
 import shutil
 
-from fleetlib import (ROOT, allow_windows_user, atomic_write, encode, expand,
-                      http_json, install_skill_link, link_matches, profile, read_json, state_dir,
-                      tree_hash, verify_release)
+from fleetlib import (allow_windows_user, atomic_write, encode, expand,
+                      http_json, install_skill_link, link_matches, load_config, profile, read_json,
+                      skill_allowed, state_dir, tree_hash, verify_release)
 
 
 def assert_idle(state, allowed=()):
@@ -51,7 +51,7 @@ def plan(config, release, names, shared=False):
         for skill in manifest["skills"]:
             source = release / "skills" / skill
             path = p["home"] / "skills" / skill
-            excluded = (source / ".claude-only").exists() and (p["driver"] != "claude" or p["identity"] != "personal")
+            excluded = not skill_allowed(config, p, source)
             if excluded and not path.exists() and not path.is_symlink():
                 continue
             canonical = os.name != "nt" or path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction())
@@ -118,7 +118,7 @@ def main():
     parser.add_argument("--allow-thread", action="append", default=[], help="Only the maintenance thread itself may remain active")
     parser.add_argument("--control-host", action="store_true", help="A control laptop without a managed T3 operator session")
     args = parser.parse_args()
-    config = read_json(ROOT / "fleet.json")
+    config = load_config()
     state = state_dir(config)
     revision = args.release or read_json(state / "latest-release.json")["revision"]
     if len(revision) != 20 or any(c not in "0123456789abcdef" for c in revision):

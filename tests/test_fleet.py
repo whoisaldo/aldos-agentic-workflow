@@ -93,24 +93,24 @@ class FleetTests(unittest.TestCase):
         fleet.atomic_write(root / "unicode.txt", "caf\u00e9\n")
         self.assertEqual((root / "unicode.txt").read_bytes(), "caf\u00e9\n".encode("utf-8"))
 
-    def test_university_uses_its_key_and_excludes_personal_bridges(self):
-        self.config["additional_gateways"] = {"secondary": {"runtime_dir": "~/neu", "url": "http://127.0.0.1:8318"}}
-        fleet.atomic_write(self.root / "neu/private/client.json", fleet.encode({"api_key": "university-key"}))
-        fleet.atomic_write(self.root / "state/gateway-keys/secondary.json", fleet.encode({"api_key": "university-key"}))
-        self.config["profiles"]["neu"] = {"home": "~/.claude_fleet_secondary", "managed": True, "driver": "claude", "identity": "secondary", "gateway": "secondary", "model": "claude-opus-5-5", "effort": "xhigh"}
+    def test_secondary_identity_uses_its_key_and_excludes_personal_bridges(self):
+        self.config["additional_gateways"] = {"secondary": {"runtime_dir": "~/secondary-gateway", "url": "http://127.0.0.1:8318"}}
+        fleet.atomic_write(self.root / "secondary-gateway/private/client.json", fleet.encode({"api_key": "secondary-key"}))
+        fleet.atomic_write(self.root / "state/gateway-keys/secondary.json", fleet.encode({"api_key": "secondary-key"}))
+        self.config["profiles"]["secondary"] = {"home": "~/.claude_fleet_secondary", "managed": True, "driver": "claude", "identity": "secondary", "gateway": "secondary", "model": "claude-opus-5-5", "effort": "xhigh"}
         bridge = self.release / "skills/bridge"
         fleet.atomic_write(bridge / "SKILL.md", "fixture bridge")
         fleet.atomic_write(bridge / ".claude-only", "")
         manifest = fleet.read_json(self.release / "manifest.json")
         manifest["skills"]["bridge"] = fleet.tree_hash(bridge)
         fleet.atomic_write(self.release / "manifest.json", fleet.encode(manifest))
-        home = fleet.profile(self.config, "neu")["home"]
+        home = fleet.profile(self.config, "secondary")["home"]
         fleet.atomic_write(home / "settings.json", fleet.encode({"unrelated": True, "env": {"KEEP": "value"}}))
-        _, files, links = fleet.render_profile(self.config, "neu", self.release)
+        _, files, links = fleet.render_profile(self.config, "secondary", self.release)
         settings = json.loads(files[home / "settings.json"])
         self.assertTrue(settings["unrelated"])
         self.assertEqual(settings["env"]["KEEP"], "value")
-        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "university-key")
+        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "secondary-key")
         self.assertNotIn("CODEX_HOME", settings["env"])
         self.assertNotIn(home / "skills/bridge", links)
 

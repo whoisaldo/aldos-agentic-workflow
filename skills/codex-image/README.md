@@ -8,7 +8,7 @@ HTML mockups look amateurish. Codex can generate genuine art. This skill lets
 Claude hand the art job to Codex, get a PNG back, and carry on building.
 
 **Auth:** uses the existing ChatGPT OAuth login in `codex`. No
-`OPENAI_API_KEY`, no per-image billing.
+`OPENAI_API_KEY`. It runs on your own Codex sign-in and uses its quota.
 
 ## Install
 

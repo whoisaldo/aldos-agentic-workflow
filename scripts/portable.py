@@ -10,7 +10,7 @@ import stat
 import tempfile
 import zipfile
 
-from fleetlib import ROOT, allow_windows_user, atomic_write, encode, read_json, state_dir, tree_entries, verify_release
+from fleetlib import allow_windows_user, atomic_write, encode, load_config, read_json, state_dir, tree_entries, verify_release
 
 
 def export_release(source, destination):
@@ -88,7 +88,7 @@ def main():
     install.add_argument("--archive", type=Path, required=True)
     install.add_argument("--sha256", required=True)
     args = parser.parse_args()
-    state = state_dir(read_json(ROOT / "fleet.json"))
+    state = state_dir(load_config())
     if args.action == "export":
         revision = args.release or read_json(state / "latest-release.json")["revision"]
         if not re.fullmatch(r"[0-9a-f]{20}", revision):

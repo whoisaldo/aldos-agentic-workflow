@@ -45,6 +45,9 @@ Before requesting submission approval:
 3. Save the final review text, tailored build PDF, screenshots, and a short status note identifying unresolved omissions or portal-specific mappings.
 4. Create a self-contained HTML gallery with every screenshot embedded, including the resume preview. Use [the gallery helper](scripts/review_gallery.py) with a JSON manifest. Clicking a screenshot must show its full size. The HTML must contain no controls that can submit the live application.
 5. If the user is working from another device, serve the gallery from a free port on a private network address that device can reach, such as a Tailscale address, and give them a working URL. Also provide the single HTML file for download. Do not assume a GUI opened on the agent's machine is visible to the user, and do not publish personal application data to a public site.
+6. Save the self-contained HTML in the resume repository under the job's `tailored/<employer-role-or-requisition>/application-review.html`, outside ignored `build/` paths. Keep an `application.md` beside it with the role, requisition, application status, the working review URL, a relative link to the HTML, the exact uploaded resume filename and its SHA-256, and confirmation evidence when available. Update the repository's `applications.md` index with both review links and the accurate status. A server URL alone is not a durable record.
+
+Put the clickable review URL in the final text reply as well as any inline visual, so the user can open the full screenshot gallery directly from their own device.
 
 Example helper invocation:
 
@@ -62,4 +65,4 @@ Use approval only for that application and the changes the user authorized with 
 
 After approval, click the final submission control once and wait for a portal confirmation or submitted application status. If the result is uncertain, inspect the existing application status before retrying. Never create a duplicate submission to resolve an ambiguous response.
 
-Capture the confirmation, record the requisition/status, and update the HTML and status note to Submitted only when the portal confirms success. Report a failed or uncertain submission accurately.
+Capture the confirmation, record the requisition/status, and update the HTML and status note to Submitted only when the portal confirms success. Save the updated HTML, confirmation evidence, and post-submission review URL in the job's repository folder and update `applications.md` before reporting completion. Keep drafts distinct from confirmed applications. Report a failed or uncertain submission accurately.

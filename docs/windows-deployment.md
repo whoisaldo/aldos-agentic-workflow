@@ -10,7 +10,7 @@ python3 scripts/portable.py export --output ~/Services/fleet-share/distributions
 
 The command writes a `.sha256` companion and refuses to overwrite an archive. Transfer that archive, its checksum and this shared source snapshot to the worker. Do not transfer the private fleet's history, profile directories or sessions.
 
-Stage only your own gateway client key in a private `gateway-keys/personal.json` file containing an `api_key` field. Never transfer gateway management keys, OAuth files or native credentials. These are personal client profiles; Meta work belongs in its approved environment.
+Stage only your own gateway client key in a private `gateway-keys/personal.json` file containing an `api_key` field. Never transfer gateway management keys, OAuth files or native credentials. These are personal client profiles; employer work belongs in its approved environment.
 
 If the checkout is `D:\AgentWork\fleet`, run:
 

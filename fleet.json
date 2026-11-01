@@ -1,4 +1,5 @@
 {
+  "$schema": "./fleet.schema.json",
   "schema_version": 1,
   "owner": "Your name",
   "state_dir": "~/Services/fleet-share",
@@ -101,5 +102,54 @@
       "owner": "T3 Code Nightly desktop app"
     }
   },
-  "additional_gateways": {}
+  "additional_gateways": {},
+  "skill_policy": {
+    "personal_identities": [
+      "personal"
+    ]
+  },
+  "notify": {
+    "host": "devbox1",
+    "max_chars": 500,
+    "max_sentences": 3,
+    "interval_minutes": 30,
+    "channels": [
+      {
+        "name": "discord",
+        "type": "discord-webhook",
+        "url": {
+          "secret": "personal/FLEET_PAGE_DISCORD_WEBHOOK"
+        }
+      }
+    ]
+  },
+  "secrets": {
+    "host": "devbox1",
+    "scopes": [
+      "personal",
+      "work"
+    ]
+  },
+  "sync": {
+    "host": "devbox1",
+    "machines": [
+      "mainpc",
+      "macbook-pro-2"
+    ],
+    "interval_seconds": 120,
+    "stale_after_minutes": 10,
+    "service_label": "org.sharedfleet.skill-sync",
+    "include_native": false,
+    "shared_homes": []
+  },
+  "debug": {
+    "claude": {
+      "personal": {
+        "home": "~/.claude",
+        "email": "your-email@example.com",
+        "login": "claudeai",
+        "sso": false
+      }
+    }
+  }
 }

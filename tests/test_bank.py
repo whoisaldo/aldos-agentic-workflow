@@ -99,9 +99,28 @@ class BankTests(unittest.TestCase):
                     finally:
                         fleetlib.ROOT = previous
 
+    def test_every_export_carries_the_mit_notice_and_vendored_licenses(self):
+        for name in self.catalog['presets']:
+            with self.subTest(preset=name), tempfile.TemporaryDirectory() as temp:
+                selected = bank.choose(self.catalog, name)
+                output = bank.export(self.catalog, selected, Path(temp) / 'kit')
+                self.assertEqual((output / 'LICENSE').read_bytes(), (ROOT / 'LICENSE').read_bytes())
+                notices = [p.name.removesuffix('-LICENSE.txt') for p in (output / 'bank/licenses').iterdir()]
+                for skill in selected['skills']:
+                    if self.catalog['skills'][skill]['path'].startswith('vendor/'):
+                        self.assertTrue([n for n in notices if skill.startswith(n)], skill)
+
     def test_automation_is_disabled(self):
         for path in (ROOT / 'bank/automation').glob('*.json'):
             self.assertIs(json.loads(path.read_text())['enabled'], False)
+
+    def test_vendored_skills_match_their_pinned_upstream_trees(self):
+        # Vendored skills stay byte-for-byte upstream; the pin is the tree of the upstream release.
+        upstream = {'design-taste-frontend': '834b1946a8ffa40bc068ec4064709668a812aa36eb0eb348d39638d8c0de8b81'}
+        for entry in json.loads((ROOT / 'skills/external.lock.json').read_text())['skills']:
+            with self.subTest(entry['name']):
+                self.assertEqual(fleetlib.tree_hash(ROOT / entry['path']), entry['sha256'])
+                self.assertEqual(entry['sha256'], upstream.get(entry['name'], entry['sha256']))
 
 
 if __name__ == '__main__':

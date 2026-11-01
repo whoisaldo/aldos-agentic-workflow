@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fleet configuration",
+  "description": "Machines, account profiles and fleet services for scripts/fleet. Committed to Git, so it holds no credentials: notification URLs, topics and tokens name a vault secret or an environment variable instead.",
+  "type": "object",
+  "required": ["schema_version", "owner", "state_dir", "machines", "profiles"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "owner": {"type": "string", "minLength": 1, "description": "The person this fleet belongs to."},
+    "state_dir": {"type": "string", "minLength": 1, "description": "Private state outside Git: releases, tasks, leases, pages, the secret vault and logs."},
+    "gateway": {"$ref": "#/$defs/gateway"},
+    "additional_gateways": {"type": "object", "additionalProperties": {"$ref": "#/$defs/gateway"}},
+    "machines": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]{0,62}$"},
+      "additionalProperties": {"$ref": "#/$defs/machine"}
+    },
+    "profiles": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]{0,62}$"},
+      "additionalProperties": {"$ref": "#/$defs/profile"}
+    },
+    "protected_services": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ports": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 65535}},
+          "owner": {"type": "string"}
+        }
+      }
+    },
+    "skill_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "personal_identities": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true,
+          "description": "Identities that receive skills marked .claude-only (Claude profiles only). Default: [\"personal\"]."
+        }
+      }
+    },
+    "notify": {
+      "type": "object",
+      "required": ["host", "channels"],
+      "additionalProperties": false,
+      "description": "fleet page: one short message to the owner about a blocker only they can clear.",
+      "properties": {
+        "host": {"type": "string", "description": "Machine that sends pages; other machines relay over SSH."},
+        "max_chars": {"type": "integer", "minimum": 1, "default": 500},
+        "max_sentences": {"type": "integer", "minimum": 1, "default": 3},
+        "interval_minutes": {"type": "number", "minimum": 0, "default": 30, "description": "Minimum time between pages from one agent session."},
+        "channels": {"type": "array", "items": {"$ref": "#/$defs/channel"}}
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": ["host"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {"type": "string", "description": "Machine that keeps the vault; other machines relay over SSH."},
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
+          "description": "Default: the distinct identity values of the profiles."
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "required": ["host"],
+      "additionalProperties": false,
+      "description": "fleet sync and the skill synchronization worker.",
+      "properties": {
+        "host": {"type": "string", "description": "Machine that runs the worker and publishes releases."},
+        "machines": {"type": "array", "uniqueItems": true, "items": {"type": "string"}, "description": "Other machines the worker updates over SSH."},
+        "interval_seconds": {"type": "integer", "minimum": 30, "default": 120},
+        "stale_after_minutes": {"type": "number", "minimum": 1, "default": 10},
+        "service_label": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$", "default": "org.sharedfleet.skill-sync"},
+        "include_native": {"type": "boolean", "default": false, "description": "Also link fleet skills into unmanaged native homes."},
+        "shared_homes": {"type": "array", "items": {"type": "string"}, "description": "Extra skill roots, such as ~/.agents, that receive portable skills."}
+      }
+    },
+    "debug": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claude": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
+          "additionalProperties": {"$ref": "#/$defs/claude_debug_home"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {"type": "string", "pattern": "^https?://"},
+        "version": {"type": "string"},
+        "release_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runtime_dir": {"type": "string"},
+        "service_label": {"type": "string"},
+        "accounts_per_provider": {"type": "integer", "minimum": 1},
+        "expected_email": {"type": "string"},
+        "identity": {"type": "string"},
+        "providers": {"type": "array", "items": {"enum": ["claude", "codex"]}}
+      }
+    },
+    "machine": {
+      "type": "object",
+      "required": ["os", "user", "address", "ssh", "roles"],
+      "additionalProperties": false,
+      "properties": {
+        "os": {"enum": ["macos", "windows", "linux"]},
+        "user": {"type": "string", "minLength": 1},
+        "address": {"type": "string", "minLength": 1},
+        "ssh": {"type": "string", "minLength": 1, "description": "SSH alias used to reach this machine."},
+        "hostname": {"type": "string", "description": "Short hostname, when it differs from the machine name."},
+        "repo": {"type": "string", "description": "Fleet checkout on this machine."},
+        "fleet_command": {"type": "string", "description": "Fleet CLI used for relays. Default: REPO/scripts/fleet."},
+        "work_root": {"type": "string"},
+        "state_dir": {"type": "string", "description": "This machine's fleet state, when it differs from the top-level state_dir."},
+        "python": {"type": "string", "description": "Python 3.11+ used by the sync worker over SSH."},
+        "launcher": {"type": "string", "description": "Fleet launcher the sync worker keeps current."},
+        "roles": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "heavy_build_slots": {"type": "integer", "minimum": 0},
+        "interactive_tests_require_login": {"type": "boolean"}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "required": ["driver", "identity", "home", "managed"],
+      "additionalProperties": false,
+      "properties": {
+        "driver": {"enum": ["codex", "claude"]},
+        "identity": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
+        "home": {"type": "string", "minLength": 1},
+        "windows_home": {"type": "string"},
+        "managed": {"type": "boolean"},
+        "transport": {"type": "string"},
+        "gateway": {"type": "string"},
+        "model": {"type": "string"},
+        "effort": {"type": "string"},
+        "t3_instance": {"type": "string"}
+      }
+    },
+    "value_ref": {
+      "description": "Where a sensitive value lives: {\"secret\": \"SCOPE/NAME\"} in the fleet vault, or {\"env\": \"NAME\"}.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "secret": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}/[A-Z][A-Z0-9_]{0,63}$"},
+        "env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+      }
+    },
+    "channel": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "type": {"enum": ["discord-webhook", "slack-webhook", "ntfy", "openclaw", "command"]},
+        "url": {"$ref": "#/$defs/value_ref"},
+        "server": {"type": "string", "pattern": "^https?://"},
+        "topic": {"$ref": "#/$defs/value_ref"},
+        "token": {"$ref": "#/$defs/value_ref"},
+        "priority": {"enum": ["min", "low", "default", "high", "max"]},
+        "channel": {"type": "string"},
+        "account": {"type": "string"},
+        "target": {"type": "string"},
+        "binary": {"type": "string"},
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"type": {"enum": ["discord-webhook", "slack-webhook"]}}}, "then": {"required": ["url"]}},
+        {"if": {"properties": {"type": {"const": "ntfy"}}}, "then": {"required": ["topic"]}},
+        {"if": {"properties": {"type": {"const": "openclaw"}}}, "then": {"required": ["channel", "target"]}},
+        {"if": {"properties": {"type": {"const": "command"}}}, "then": {"required": ["argv"]}}
+      ]
+    },
+    "claude_debug_home": {
+      "type": "object",
+      "required": ["home", "email"],
+      "additionalProperties": false,
+      "properties": {
+        "home": {"type": "string", "minLength": 1, "description": "Direct (non-gateway) Claude home."},
+        "email": {"type": "string", "pattern": "^[^@\\s]+@[^@\\s]+$", "description": "The account this home must be signed in to."},
+        "login": {"enum": ["claudeai", "console"], "default": "claudeai"},
+        "sso": {"type": "boolean", "default": false}
+      }
+    }
+  }
+}

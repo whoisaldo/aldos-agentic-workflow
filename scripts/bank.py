@@ -50,7 +50,7 @@ def choose(catalog, preset=None, modules=(), skills=(), without=(), skip_skills=
 
 def selection_files(catalog, selection, root=ROOT):
     inventory = json.loads((root / 'bank/files.json').read_text())
-    prefixes = ['AGENTS.md', 'CLAUDE.md', 'docs/skills.md', 'docs/install-skills.md', 'docs/provenance.md', 'docs/public-release.md', 'bank/licenses']
+    prefixes = ['LICENSE', 'AGENTS.md', 'CLAUDE.md', 'docs/skills.md', 'docs/install-skills.md', 'docs/provenance.md', 'docs/public-release.md', 'bank/licenses']
     for name in selection['modules']:
         prefixes.extend(catalog['modules'][name]['files'])
     for name in selection['skills']:
