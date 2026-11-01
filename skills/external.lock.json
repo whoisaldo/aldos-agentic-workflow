@@ -35,6 +35,12 @@
       "sha256": "7acc71a0091aa830c531892c249581b6371dbd23175831b11bb27442333e6d29",
       "source": "Existing installed third-party skill; see ~/.agents/.skill-lock.json or upstream SKILL.md",
       "path": "vendor/skills/hyperframes-keyframes"
+    },
+    {
+      "name": "design-taste-frontend",
+      "sha256": "834b1946a8ffa40bc068ec4064709668a812aa36eb0eb348d39638d8c0de8b81",
+      "source": "https://github.com/Leonxlnx/taste-skill skills/taste-skill at 12af471f627f866411b4bd785b19646d3672784c (v2.1.5), with the repository's MIT LICENSE",
+      "path": "vendor/skills/design-taste-frontend"
     }
   ]
 }

@@ -33,3 +33,6 @@ server-runtime.json
 *.xlsx
 gitleaks-report*
 public-audit*.json
+
+# Your own trifecta roles and gateway URLs.
+**/orchestrate-trifecta/trifecta.json

@@ -22,8 +22,8 @@ Use the following division of work:
 | An object (three.js module, animatable SVG) | `codex-3d`: Claude collaborates with GPT-6.1 Sol at max |
 | To know whether a running page is right | **`codex-computer-use`** |
 
-**Auth:** the existing ChatGPT OAuth login in `codex`. No API key, no per-run
-billing on the plan. Max-effort runs are slow (3-10 min), not expensive.
+**Auth:** the existing ChatGPT OAuth login in `codex`. No API key. It runs on
+your own Codex sign-in and uses its quota. Max-effort runs are slow (3-10 min).
 
 ## What it produces: the loop on a real page
 

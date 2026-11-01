@@ -1,63 +1,79 @@
 ---
 name: orchestrate-trifecta
-description: Run a build as a three-account workflow on T3's orchestrator. The thread on the coordinator Claude account coordinates, Claude on the builder account builds, and GPT-6.1 Sol on the reviewer Codex account reviews, all through delegate_task. Use when the user says "/orchestrate-trifecta", "trifecta", "use my workflow", "orchestrate this", gives a long or multi-part build goal, or asks for builders and reviewers. This is the default for any work big enough to delegate. Do NOT use for a quick edit or a question you can answer yourself, for unrelated employer work, or from inside a delegated child task.
+description: Run a build as a multi-account workflow on T3 Code's orchestrator. This thread coordinates, builder accounts build, and reviewer accounts review (by default 70% GPT, 30% Claude), all through delegate_task, with builders moving to a fallback account while a usage window is closed and back when it reopens. Roles come from trifecta.json. Use when the user says "/orchestrate-trifecta", "trifecta", "use my workflow", "orchestrate this", gives a long or multi-part build goal, or asks for builders and reviewers. This is the default for any work big enough to delegate. Do NOT use for a quick edit or a question you can answer yourself, for work that belongs to an account the config does not name, or from inside a delegated child task.
 ---
 
 # Orchestrate trifecta
 
-## Shared copy setup
+A standing workflow for work big enough to hand out. Several accounts, one
+role each, so that no single limit stops a run. The roles live in a config
+file, not in this skill.
 
-This is a redacted copy of a T3-specific workflow, not a standalone
-orchestrator. Replace every angle-bracket provider ID with the matching ID
-from your own live `orchestrator_capabilities` catalog. Use models and
-options that catalog actually offers. The model names and review split below
-are examples from the original workflow, not a promise of availability.
+You are the coordinator. If this thread is not on the coordinator account the
+config names, say so and ask before going on. If you are a delegated child, do
+the task you were given and do not start this workflow.
 
-The account names, personal identity, employer and school references,
-network addresses, and private machine paths have been removed. Plan limits
-vary. Verify your own windows and quotas before using the thresholds below.
+`USAGE` below means `python3 ~/.claude/skills/orchestrate-trifecta/scripts/usage.py`.
+Use the skill's real location if it is installed elsewhere.
 
-The included `scripts/usage.py` requires compatible gateway management APIs
-and your own configuration. See README.md. It has no embedded credentials
-and does not include any original account configuration.
+## Load the config first
 
-A standing workflow for work big enough to hand out. Three accounts, one
-role each, so that no single limit stops a run:
+Run `USAGE --check-config` at the start of every run. It finds the config at
+`TRIFECTA_CONFIG`, or `trifecta.json` next to this file, validates it and
+prints the role table. If it reports a missing or invalid config, tell the
+user what it printed, point them at `trifecta.example.json` and the README,
+and stop. Do not guess provider ids.
 
-| Role | Account | T3 provider instance | Model | Limit |
-| --- | --- | --- | --- | --- |
-| Coordinator | Coordinator Claude account | the thread you are in | as started | check the actual plan |
-| Builders | Builder Claude account | `<BUILDER_PROVIDER_ID>` | `claude-opus-5-5`, effort `high` | check the actual plan |
-| Reviewers, 70% | GPT-6.1 Sol on the reviewer Codex account | `<REVIEWER_PROVIDER_ID>` | `gpt-6.1-sol`, reasoningEffort `high` | check the actual plan |
-| Reviewers, 30% | Builder Claude account | `<BUILDER_PROVIDER_ID>` | `claude-opus-5-5`, effort `high` | as above |
+From the table, note for the whole run:
 
-You are the coordinator. If this thread is not on the selected coordinator Claude
-account, say so and ask before going on. If you are a delegated child, do the
-task you were given and do not start this workflow.
+| Config | Meaning | Example |
+| --- | --- | --- |
+| `coordinator` | The account this thread runs on | the owner's main Claude account |
+| `builders` | Builder accounts in order: primary first, then fallbacks. Each has a provider instance, model, options and `switch_at_percent` (default 85) | `builder1` a builder seat, `builder2` the coordinator's own account |
+| `reviewers` | Reviewer accounts with a `weight`, defaulting to 7 for a Codex/GPT reviewer and 3 for a Claude reviewer | `reviewer1` GPT at weight 7, `reviewer2` Claude at weight 3 |
+| `max_parallel_builders` | Builders at once (default 2) | 2 |
+| `never_use` | Provider instance ids never to start anything on | direct logins kept for manual checks |
+| `stale_minutes` | Age after which a reading is STALE (default 20) | 20 |
+
+Role ids are `coordinator`, `builder1`, `builder2`, ..., `reviewer1`, ....
+Everywhere below, "the primary builder" is `builder1`, "the fallback" is the
+next builder in order, and each role's provider instance, model and options
+are the ones in the table.
+
+Why the order matters, with the example config: a second Claude seat with a
+short usage window goes first, so the coordinator's budget is not spent on
+building. The coordinator's own account is the
+fallback; it is there to be used while the primary's window is closed, and it
+is not first only so that it is not spent needlessly. Order your own builders
+by the same logic: the account whose limit costs least to exhaust goes first.
 
 ## Before the first delegation
 
 1. Call `orchestrator_capabilities` (its output is large: it lands in a file,
-   query it with `jq`). Confirm the three instances above exist with
-   `canRunCrossProviderChildTask: true`, and take model and option ids from
-   it. If an id here no longer matches, trust the live catalog and tell the user.
-2. Run `python3 ~/.claude/skills/orchestrate-trifecta/scripts/usage.py` and note the
-   three readings.
+   query it with `jq`). Confirm every provider instance in the config exists
+   with `canRunCrossProviderChildTask: true`, and take model and option ids
+   from it. If an id in the config no longer matches, trust the live catalog
+   and tell the user. Never use an instance listed in `never_use`, even when
+   the catalog shows it as available.
+2. Run `USAGE` and note each role's reading.
 3. Write down what done means for this run, as checks you can run, and where
    the run's state lives: one progress file a successor could resume from.
 
 ## Your job as coordinator
 
-The coordinator account pays for every token you read. Its quota can
-limit the run. Spend it on decisions, not on work:
+The coordinator account pays for every token you read, and its longest
+usage window, if it has one, is the one that can end a run for days. Spend it on decisions,
+not on work:
 
 - Plan, split, brief, merge, run checks in the shell, decide. Do not write
   the feature code yourself and do not start native Claude subagents or
-  workflows; those bill the coordinator account. Everything goes out through `delegate_task`.
+  workflows; those bill the coordinator account. Everything goes out through
+  `delegate_task`.
 - Do not open images or read large files a child can summarize. Ask for the
   answer in words with file paths and line numbers.
 - Keep the progress file current after every merge and every review, with
-  each `taskId`, what it was for, and its outcome.
+  each `taskId`, what it was for, the role and account it ran on, and its
+  outcome.
 
 ## Delegating
 
@@ -70,54 +86,55 @@ limit the run. Spend it on decisions, not on work:
   `task_cancel` stops one that has gone wrong.
 - A new `clientRequestId` for every task and every review round, kept stable
   across retries of that same call.
-- At most two builders at once unless the user sets another number. Builders that
-  run in parallel each get their own git worktree, created by you
-  (`git worktree add`), with its path in the prompt. Two builders never share
-  a checkout.
-- Set `role`: `implementation` for builders, `review` for reviewers.
+- At most `max_parallel_builders` builders at once unless the user sets
+  another number. Builders that run in parallel each get their own git
+  worktree, created by you (`git worktree add`), with its path in the
+  prompt. Two builders never share a checkout.
+- Set `role`: `implementation` for builders, `review` for reviewers. Pass the
+  role's provider instance, model and options from the config as the target.
 
-## Builders and their usage window
+## Builders and their usage windows
 
-This workflow prioritizes the builder account to preserve coordinator
-capacity. Verify the actual limits on your plans before using this policy.
-Routing builders through `<BUILDER_PROVIDER_ID>` is what
-makes that window visible: the fleet gateway records the usage header of
-every response, and `usage.py` reads it.
+New builders go to the first builder in order that is open. Routing builders
+through a gateway that records usage is what makes their windows visible:
+the gateway keeps the rate-limit headers of every response, and `USAGE`
+reads them.
 
-- Run `usage.py` before each wave of builders and whenever a builder fails.
-- Under 85% of the 5-hour window: build on the builder account.
-- At 85% or more: start nothing large there. Let running builders finish.
+- Run `USAGE` before each wave of builders and whenever a builder fails.
+- Below its `switch_at_percent`: build on that builder.
+- At or above it (`USAGE` prints AT THRESHOLD): start nothing large there.
+  Let running builders finish.
 - Exhausted (a child fails with a rate or usage limit error, or the status
   reads rejected): do these three things at once, so no work waits.
   1. Record in the progress file the time it ran out and the reset time
-     `usage.py` gives.
-  2. Carry on building on the coordinator account (`<COORDINATOR_PROVIDER_ID>`, `claude-opus-5-5`, effort
-     `high`) at the same pace and the same number of builders. Re-send any
-     builder task the limit cut off. The coordinator account is the configured fallback. The builder
-     account goes first to preserve coordinator capacity.
-  3. Set the clock: run
-     `python3 ~/.claude/skills/orchestrate-trifecta/scripts/usage.py --sleep-until-reset builder`
-     as a background command with the longest timeout allowed. It sleeps
-     until a minute after the reset and its exit wakes this thread. Timers
-     such as ScheduleWakeup do not fire in a T3 thread; a background command
-     does. Exit code 3 means the reset is still ahead: run it again.
-- When the clock goes off: send a one-line task to
-  `<BUILDER_PROVIDER_ID>` to confirm it answers, read `usage.py`,
-  and from then on every new builder goes to the builder account again. Builders
-  already running on the coordinator account finish where they are. Record the switch back.
-- Only one clock at a time. If this thread is resumed after a break, check
-  the progress file for a recorded reset time and compare it with `date`
-  before choosing an account.
-- If the coordinator account itself runs out while the builder account is still closed, nothing can
-  build: keep reviews and checks going, leave the clock running, and tell
-  the user.
-- If the builder account gateway itself is failing (errors that are not limits),
-  the same seat is reachable without it as `<BUILDER_DIRECT_PROVIDER_ID>`.
-  Usage is then not visible, so go by failures alone.
+     `USAGE` gives.
+  2. Carry on building on the fallback at the same pace and the same number
+     of builders. Re-send any builder task the limit cut off.
+  3. Set the clock: run `USAGE --sleep-until-reset builder1` (the role that
+     ran out) as a background command with the longest timeout allowed. It
+     sleeps until a minute after the latest reset among the windows that
+     block the role, whichever ran out, and its exit wakes this thread.
+     Timers such as ScheduleWakeup do not fire in a T3 thread; a background
+     command does. Exit code 3 means the reset is still ahead: run it again.
+     Each time you start it, call `t3_background_wait` with its task ID
+     before ending the turn. Unmarked, T3 takes the sleep for a leftover
+     command and shows the thread as finished instead of Working.
+- When the clock goes off: send a one-line task to that builder's provider
+  instance to confirm it answers, read `USAGE`, and from then on every new
+  builder goes to it again. Builders already running on the fallback finish
+  where they are. Record the switch back.
+- Only one clock at a time, on the earliest builder in order that is closed.
+  If this thread is resumed after a break, check the progress file for a
+  recorded reset time and compare it with `date` before choosing an account.
+- If every builder is closed, nothing can build: keep reviews and checks
+  going, leave the clock running, and tell the user.
+- If a builder's gateway itself is failing (errors that are not limits),
+  carry on building on the fallback as in step 2 and tell the user. Never
+  fall back to an instance in `never_use`.
 
-A reading older than 20 minutes is marked STALE. The builder account reading
-refreshes whenever a builder runs. To refresh the coordinator account or Codex, send a one-line
-`delegate_task` to `<COORDINATOR_GATEWAY_PROVIDER_ID>` or `<REVIEWER_GATEWAY_PROVIDER_ID>`; do this only when the
+A reading older than `stale_minutes` is marked STALE. A builder's reading
+refreshes whenever a builder runs on it. To refresh another role, send a
+one-line `delegate_task` to its provider instance; do this only when the
 number changes a decision.
 
 ## Reviews
@@ -125,13 +142,15 @@ number changes a decision.
 Nothing a builder produces is accepted on its own word. Every unit of work
 gets an independent review before it merges.
 
-- Seven of every ten reviews go to Sol and three to Claude on the builder account.
-  Keep the tally in the progress file. With one reviewer per round, default
-  to Sol and give Claude the rounds where a second kind of reader matters
-  most: the final pass, a finding the builder disputes, anything Sol passed
-  that still looks wrong to you. With several reviewers on one round, split
-  that round 70/30.
-- If the builder account is exhausted, the Claude share goes to Sol, not to the coordinator account.
+- Split reviews by the reviewers' weights. With the default 7 and 3, seven
+  of every ten reviews go to the GPT reviewer and three to the Claude
+  reviewer. Keep the tally in the progress file. With one reviewer per round,
+  default to the heaviest reviewer and give the others the rounds where a
+  second kind of reader matters most: the final pass, a finding the builder
+  disputes, anything the main reviewer passed that still looks wrong to you.
+  With several reviewers on one round, split that round by weight.
+- If a reviewer's account is exhausted, its share goes to the remaining
+  reviewers, not to the coordinator's account.
 - A reviewer is never the builder of the thing it reviews, and it gets the
   work, not your opinion of it: the brief, the diff or the artifact paths,
   and what done means.
@@ -141,46 +160,49 @@ gets an independent review before it merges.
   round is a new `delegate_task` whose prompt carries the original brief, the
   earlier findings, what was done about each, and any objection still open.
   Do not continue a review by messaging the child's thread.
-- Sol can look at images. Give it file paths; do not look yourself.
+- A reviewer that can read images can check screenshots and renders. Give it
+  file paths; do not look yourself.
 
 ## Running to the end
 
-The user starts a run and expects not to hear about it until it is done. A run
-that stops early and waits for the user is the failure this workflow exists to
-prevent.
+The user starts a run and expects not to hear about it until it is done. A
+run that stops early and waits for them is the failure this workflow exists
+to prevent.
 
 - No time caps. Do not write "stop after N hours" into a goal, a plan or a
   child's brief. Usage limits are handled by the rules above, not by a clock.
 - Never end a turn with nothing in flight before done is met: a child task
   or a background clock must be running, or the next step must be started
   in the same turn. A run whose last turn ends idle has stopped.
-- Do not hand the user a choice the brief already answers or that a builder and
-  a review can settle. Decide, record why in the progress file, go on.
-  Stop only for what only the user can authorize: merging to main, spending money,
-  anything outward-facing, or a change to what the work is.
+- Do not hand the user a choice the brief already answers or that a builder
+  and a review can settle. Decide, record why in the progress file, go on.
+  Stop only for what only the user can decide: merging to main, spending
+  money, anything outward-facing, or a change to what the work is.
 - If an item will not pass, keep working it (diagnose, fix, review, measure
   again) until it passes or the evidence shows it cannot without breaking a
   rule. Report the second case at the end with that evidence; do not stop
   the rest of the run for it.
-- If the coordinator account's weekly reading reaches 95% before the run is done, do not stop:
-  hand coordination to a new thread on `<BUILDER_PROVIDER_ID>`
-  through `t3_thread_launch`, briefed to resume from the progress file and
-  to follow this skill, and record the handoff there.
+- If the coordinator's longest-window reading reaches 95% before the run is
+  done, do not stop: hand coordination to a new thread on the primary
+  builder's provider instance through `t3_thread_launch`, briefed to resume
+  from the progress file and to follow this skill, and record the handoff
+  there.
 
 ## Finishing
 
 - Run the checks you wrote down at the start, yourself, on the merged result.
 - PRs: follow the repository's rules, call `link_pull_request` for every PR
   the run creates, and keep questions and asks for the user out of the PR.
-- Report to the user: what is done and verified, what is left, the review tally,
-  and the three usage readings at the end.
+- Report to the user: what is done and verified, what is left, the review
+  tally, and every role's usage reading at the end.
 
 ## Rules that do not bend
 
-- Only use the accounts selected for this workflow. Keep unrelated employer
-  accounts and their work separate.
+- Use only the accounts the config names. Keep employer and other accounts,
+  and their work, separate. Never start anything on an instance in
+  `never_use`, even when the catalog lists it.
 - Never restart T3, change its providers, or alter remote-access services
-  from a run. Follow the applicable local AGENTS.md instructions.
-- Moving builders to the coordinator account while the builder account's window is closed, and back
-  when it reopens, is the one account switch this workflow makes. Any other
-  limit is reported, not routed around.
+  from a run. Follow the repository's and machine's AGENTS.md for the rest.
+- Moving builders to the fallback while an earlier builder's window is
+  closed, and back when it reopens, is the one account switch this workflow
+  makes. Any other limit is reported, not routed around.

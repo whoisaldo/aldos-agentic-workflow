@@ -24,8 +24,8 @@ the page, and lets the sandboxed Astra drive that browser from the shell:
 accessibility snapshots with `@refs`, clicks, typing, scrolling, screenshots
 it then views with `view_image`. It is the page, not a picture of it.
 
-Auth is the user's existing ChatGPT OAuth login in `codex` - **no API key,
-no per-run billing on his plan.** Max-effort runs are slow, not expensive.
+Auth is the user's existing ChatGPT OAuth login in `codex` - **no API key.
+Runs use that Codex sign-in and its quota.** Max-effort runs are slow.
 
 ## When to use this skill
 

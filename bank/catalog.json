@@ -27,6 +27,7 @@
         "scripts/check-t3.py",
         "scripts/fleetlib.py",
         "fleet.json",
+        "fleet.schema.json",
         "profiles"
       ],
       "skills": [],
@@ -92,7 +93,7 @@
     },
     "fleet-tools": {
       "title": "Fleet tasks, releases and profiles",
-      "use_when": "You want isolated worktrees, leases or pinned custom skill releases.",
+      "use_when": "You want isolated worktrees, leases, pinned custom skill releases, skill sync, paging or a secret vault.",
       "skip_when": "You just want to copy a few skills.",
       "requires": [],
       "files": [
@@ -101,6 +102,11 @@
         "scripts/fleetlib.py",
         "scripts/gateway.py",
         "scripts/portable.py",
+        "scripts/fleetconfig.py",
+        "scripts/skills_sync.py",
+        "scripts/sync-fleet.py",
+        "scripts/install-skill-sync.py",
+        "fleet.schema.json",
         "scripts/migrate-skills.py",
         "scripts/check-cache.py",
         "scripts/install-macos-tools.py",
@@ -110,14 +116,71 @@
         "profiles",
         "machines",
         "toolchains",
+        "docs/fleet-cli.md",
         "docs/maintenance.md",
         "docs/windows-deployment.md",
         "tests/test_fleet.py",
         "tests/test_migration.py",
-        "tests/test_portable.py"
+        "tests/test_portable.py",
+        "tests/test_fleet_cli.py",
+        "tests/test_skills_sync.py",
+        "tests/test_sync_worker.py"
       ],
       "skills": [],
       "external_setup": []
+    },
+    "trifecta": {
+      "title": "Orchestrate trifecta",
+      "use_when": "You run long builds in T3 Code and have two or more AI accounts to split coordinating, building and reviewing across.",
+      "skip_when": "You have one account, or you do not use T3 Code's delegated tasks.",
+      "requires": [
+        "t3-code"
+      ],
+      "files": [
+        "docs/modules/trifecta.md",
+        "skills/orchestrate-trifecta/README.md",
+        "skills/orchestrate-trifecta/trifecta.example.json",
+        "tests/test_trifecta.py"
+      ],
+      "skills": [
+        "orchestrate-trifecta"
+      ],
+      "external_setup": [
+        "Add each account as a T3 provider instance, then write your own trifecta.json from trifecta.example.json.",
+        "Optional: route builder and reviewer accounts through your own CLIProxyAPI gateway so usage.py can read their usage windows."
+      ]
+    },
+    "paging": {
+      "title": "Paging the owner (fleet page)",
+      "use_when": "Agents run while you are away and sometimes stop on something only you can clear, such as a UAC prompt or a 2FA code.",
+      "skip_when": "You are at the machine while agents work, or their reports are enough.",
+      "requires": [
+        "fleet-tools"
+      ],
+      "files": [
+        "docs/modules/paging.md"
+      ],
+      "skills": [],
+      "external_setup": [
+        "Create a channel you own (Discord or Slack webhook, ntfy topic, OpenClaw channel or a command) and store its URL or topic in the vault or an environment variable on the notify host."
+      ]
+    },
+    "vault": {
+      "title": "Secret vault (fleet secret)",
+      "use_when": "Agents create or need API keys and tokens, and you want one place on your own machine to keep them.",
+      "skip_when": "You already use a password manager or secret store your agents can read.",
+      "requires": [
+        "fleet-tools"
+      ],
+      "files": [
+        "docs/modules/vault.md"
+      ],
+      "skills": [
+        "fleet-secrets"
+      ],
+      "external_setup": [
+        "Choose a vault host that your other machines can reach over SSH."
+      ]
     },
     "canvas-lms": {
       "title": "Canvas LMS planning",
@@ -301,6 +364,14 @@
       "runtime": "portable",
       "requires": []
     },
+    "fleet-debug": {
+      "path": "skills/fleet-debug",
+      "description": "Send one tiny direct request to a configured Claude login without the gateway, only when the owner asks, to check accounts, models or fast mode.",
+      "runtime": "claude-personal",
+      "requires": [
+        "fleet-tools"
+      ]
+    },
     "fleet-operate": {
       "path": "skills/fleet-operate",
       "description": "Inspect or configure the user's fleet machines, profiles, shared skills or gateway. Use for fleet maintenance and machine routing, not ordinary application edits.",
@@ -309,9 +380,17 @@
         "fleet-tools"
       ]
     },
+    "fleet-secrets": {
+      "path": "skills/fleet-secrets",
+      "description": "Store and fetch the owner's API keys, tokens and webhook URLs in the fleet vault. Use when a task creates a key, and before creating or asking for one.",
+      "runtime": "portable",
+      "requires": [
+        "vault"
+      ]
+    },
     "frontend-design": {
       "path": "skills/frontend-design",
-      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, artifacts, posters, or applications (examples include dashboards, React components, HTML/CSS layouts, or when styling/beautifying a component or app UI). For a landing page, marketing site, portfolio, product page, one-pager, or the redesign of one, use design-taste-frontend instead. Generates creative, polished code and UI design that avoids generic AI aesthetics.",
       "runtime": "portable",
       "requires": []
     },
@@ -323,10 +402,10 @@
     },
     "orchestrate-trifecta": {
       "path": "skills/orchestrate-trifecta",
-      "description": "Coordinate a three-account T3 build and review workflow, with provider placeholders, usage checks and setup notes.",
+      "description": "Coordinate a T3 build across configurable coordinator, builder and reviewer accounts, with usage-window failover, weighted reviews and a usage helper.",
       "runtime": "claude-personal",
       "requires": [
-        "t3-code"
+        "trifecta"
       ]
     },
     "remote-handoff": {
@@ -403,6 +482,12 @@
         "video"
       ]
     },
+    "design-taste-frontend": {
+      "path": "vendor/skills/design-taste-frontend",
+      "description": "tasteskill v2, the anti-slop frontend skill. Art direction for websites, distilled from a study of 247 curated gallery sites (One Page Love, Awwwards Sites of the Day). Deals researched directions (idea, composition, type, palette, photographs, section blueprints) from a library, enforces a strict no-slop house style with a real-browser inspector, and runs a look-and-fix loop on screenshots. Use this whenever you build, design, redesign, restyle, polish or review a landing page, marketing site, portfolio, product page, one-pager, hero or any public-facing web page, in any stack (HTML/CSS, React, Next.js, Vue, Svelte, Astro, Tailwind) \u2014 also when the user says a page looks generic, templated, \"AI-made\", sloppy, or asks to make it look designed, premium, award-level or less like every other site. Also for app screens: dashboards, admin and analytics views, settings, inboxes and other screens people work in, with their own run and rules.",
+      "runtime": "portable",
+      "requires": []
+    },
     "shared-resource-review": {
       "path": "bank/skills/shared-resource-review",
       "description": "Review shared documents and embedded guides; identify requirements and unread scope.",
@@ -431,18 +516,21 @@
       "skills": [
         "unslop",
         "baseline-ui",
-        "frontend-design"
+        "frontend-design",
+        "design-taste-frontend"
       ]
     },
     "personal-code": {
-      "description": "Coding plus T3; no school or assistant setup.",
+      "description": "Coding plus T3 and the trifecta build/review workflow; no school or assistant setup.",
       "modules": [
-        "t3-code"
+        "t3-code",
+        "trifecta"
       ],
       "skills": [
         "unslop",
         "baseline-ui",
         "frontend-design",
+        "design-taste-frontend",
         "fixing-accessibility",
         "fixing-motion-performance",
         "task-to-review",
@@ -458,6 +546,7 @@
         "unslop",
         "baseline-ui",
         "frontend-design",
+        "design-taste-frontend",
         "fixing-accessibility",
         "fixing-motion-performance",
         "task-to-review"
@@ -480,12 +569,14 @@
         "t3-code",
         "tailscale",
         "cloudflare",
-        "proxy"
+        "proxy",
+        "paging"
       ],
       "skills": [
         "unslop",
         "baseline-ui",
         "frontend-design",
+        "design-taste-frontend",
         "fixing-accessibility",
         "fixing-motion-performance",
         "task-to-review",
@@ -501,6 +592,7 @@
       ],
       "skills": [
         "frontend-design",
+        "design-taste-frontend",
         "baseline-ui",
         "resume-craft",
         "job-apply"
@@ -516,6 +608,9 @@
         "cloudflare",
         "proxy",
         "fleet-tools",
+        "trifecta",
+        "paging",
+        "vault",
         "canvas-lms",
         "openclaw-canvas",
         "document-reviews",
@@ -532,7 +627,9 @@
         "codex-image",
         "fixing-accessibility",
         "fixing-motion-performance",
+        "fleet-debug",
         "fleet-operate",
+        "fleet-secrets",
         "frontend-design",
         "job-apply",
         "orchestrate-trifecta",
@@ -546,6 +643,7 @@
         "hyperframes-core",
         "hyperframes-creative",
         "hyperframes-keyframes",
+        "design-taste-frontend",
         "shared-resource-review",
         "canvas-planning",
         "survey-requirements-review"

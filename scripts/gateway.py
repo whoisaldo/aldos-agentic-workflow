@@ -15,7 +15,7 @@ import tarfile
 import urllib.parse
 import urllib.request
 
-from fleetlib import ROOT, atomic_write, expand, gateway_config, read_json
+from fleetlib import atomic_write, expand, gateway_config, load_config, read_json
 
 
 def init(config, identity):
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--provider", choices=["claude", "codex"], default="claude")
     args = parser.parse_args()
     try:
-        config = read_json(ROOT / "fleet.json")
+        config = load_config()
         init(config, args.identity) if args.action == "init" else login(config, args.identity, args.provider)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(str(error), file=sys.stderr)
