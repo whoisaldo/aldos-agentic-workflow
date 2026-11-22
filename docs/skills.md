@@ -1,11 +1,12 @@
 # Skill bank
 
-The bank keeps 23 base fleet skills and three general assistant skills, for 26 bundled skills. Canvas LMS is an optional planning capability guide. OpenClaw visual canvas/widgets are a separate recipe.
+The bank keeps 24 base fleet skills and three general assistant skills, for 27 bundled skills. Canvas LMS is an optional planning capability guide. OpenClaw visual canvas/widgets are a separate recipe.
 
 Use `python3 scripts/bank.py list` to see selectable modules, skills and presets. Base sources remain in `skills/` and `vendor/skills/`; optional assistant sources live in `bank/skills/`. Provider-owned skills are cataloged rather than copied.
 
 | Skill | What it does | Setup notes |
 | --- | --- | --- |
+| aldo-mode | Single front door that routes requests to the right workflow or skill in this stack | No fleet service required |
 | baseline-ui | Applies UI conventions | No fleet service required |
 | frontend-design | Builds and styles components and app UI | Uses the project's tools |
 | design-taste-frontend | Art-directs landing pages, marketing sites and app screens, then checks renders in a real browser | Vendored tasteskill v2 (MIT); Node 22 and Chrome for its inspector |

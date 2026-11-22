@@ -117,6 +117,8 @@
         "machines",
         "toolchains",
         "docs/fleet-cli.md",
+        "docs/walkthrough.md",
+        "docs/handoff.md",
         "docs/maintenance.md",
         "docs/windows-deployment.md",
         "tests/test_fleet.py",
@@ -322,6 +324,12 @@
     }
   },
   "skills": {
+    "aldo-mode": {
+      "path": "skills/aldo-mode",
+      "description": "Single front door for the stack: inspects the request and routes it to orchestrate-trifecta, task-to-review, remote-handoff, UI/design skills, Codex bridges, vault, or unslop.",
+      "runtime": "portable",
+      "requires": []
+    },
     "baseline-ui": {
       "path": "skills/baseline-ui",
       "description": "Enforces an opinionated UI baseline to prevent AI-generated interface slop.",
@@ -511,9 +519,10 @@
   },
   "presets": {
     "minimal": {
-      "description": "A few portable UI/writing skills. No accounts or services selected.",
+      "description": "A few portable UI/writing skills plus the /aldo-mode front door. No accounts or services selected.",
       "modules": [],
       "skills": [
+        "aldo-mode",
         "unslop",
         "baseline-ui",
         "frontend-design",
@@ -527,6 +536,7 @@
         "trifecta"
       ],
       "skills": [
+        "aldo-mode",
         "unslop",
         "baseline-ui",
         "frontend-design",
@@ -543,6 +553,7 @@
         "coding-agents"
       ],
       "skills": [
+        "aldo-mode",
         "unslop",
         "baseline-ui",
         "frontend-design",
@@ -573,6 +584,7 @@
         "paging"
       ],
       "skills": [
+        "aldo-mode",
         "unslop",
         "baseline-ui",
         "frontend-design",
@@ -621,6 +633,7 @@
         "legacy"
       ],
       "skills": [
+        "aldo-mode",
         "baseline-ui",
         "codex-3d",
         "codex-computer-use",

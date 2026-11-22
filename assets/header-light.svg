@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Aldo's agentic workflow: multi-account orchestration, failover, cross-model reviews, and real machines">
+  <defs>
+    <pattern id="grid-light" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#E8EEF5" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="260" rx="14" fill="#F8FAFC"/>
+  <rect width="1200" height="260" rx="14" fill="url(#grid-light)"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="258.5" rx="13.25" fill="none" stroke="#CBD5E1" stroke-width="1.5"/>
+
+  <!-- Left typography -->
+  <rect x="48" y="42" width="10" height="10" rx="2" fill="#0284C7"/>
+  <text x="68" y="51" fill="#0369A1" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" font-weight="600" letter-spacing="1.4">WHOISALDO / ALDOS-AGENTIC-WORKFLOW</text>
+
+  <text x="48" y="114" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="48" font-weight="700" letter-spacing="-1.2">aldo's agentic workflow</text>
+
+  <text x="48" y="152" fill="#475569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18">One coordinator, builder failover across accounts, 70/30 GPT + Claude reviews,</text>
+  <text x="48" y="177" fill="#475569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18">a secret vault, pinned skill sync, and a 3-sentence pager when I'm actually needed.</text>
+
+  <!-- Command pills -->
+  <rect x="48" y="200" width="118" height="30" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="107" y="220" text-anchor="middle" fill="#0284C7" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" font-weight="600">/aldo-mode</text>
+
+  <rect x="176" y="200" width="204" height="30" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="278" y="220" text-anchor="middle" fill="#B45309" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" font-weight="600">/orchestrate-trifecta</text>
+
+  <rect x="390" y="200" width="118" height="30" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="449" y="220" text-anchor="middle" fill="#047857" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" font-weight="600">fleet page</text>
+
+  <rect x="518" y="200" width="134" height="30" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="585" y="220" text-anchor="middle" fill="#7E22CE" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" font-weight="600">fleet secret</text>
+
+  <!-- Right topology schematic -->
+  <g transform="translate(736, 36)">
+    <rect x="0" y="0" width="416" height="188" rx="10" fill="#FFFFFF" stroke="#CBD5E1"/>
+
+    <!-- Coordinator box -->
+    <rect x="20" y="22" width="164" height="54" rx="7" fill="#F0F9FF" stroke="#0284C7" stroke-width="1.2"/>
+    <text x="34" y="44" fill="#0369A1" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600">COORDINATOR</text>
+    <text x="34" y="63" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12">Plans, briefs &amp; merges</text>
+
+    <!-- Builders box -->
+    <rect x="220" y="22" width="176" height="54" rx="7" fill="#FFFBEB" stroke="#D97706" stroke-width="1.2"/>
+    <text x="234" y="44" fill="#B45309" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600">BUILDERS (FAILOVER)</text>
+    <text x="234" y="63" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12">Primary → Fallback → Wake</text>
+
+    <!-- Fleet ops box -->
+    <rect x="20" y="112" width="164" height="54" rx="7" fill="#FAF5FF" stroke="#7E22CE" stroke-width="1.2"/>
+    <text x="34" y="134" fill="#7E22CE" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600">FLEET SERVICES</text>
+    <text x="34" y="153" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12">Vault · Sync · Pager</text>
+
+    <!-- Reviewers box -->
+    <rect x="220" y="112" width="176" height="54" rx="7" fill="#ECFDF5" stroke="#059669" stroke-width="1.2"/>
+    <text x="234" y="134" fill="#047857" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600">REVIEWERS (70 / 30)</text>
+    <text x="234" y="153" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12">GPT-6.2 Sol + Claude</text>
+
+    <!-- Connectors -->
+    <line x1="184" y1="49" x2="215" y2="49" stroke="#94A3B8" stroke-width="1.5"/>
+    <polygon points="219,49 212,45 212,53" fill="#94A3B8"/>
+
+    <line x1="308" y1="76" x2="308" y2="107" stroke="#94A3B8" stroke-width="1.5"/>
+    <polygon points="308,111 304,104 312,104" fill="#94A3B8"/>
+
+    <line x1="220" y1="139" x2="188" y2="139" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <line x1="102" y1="76" x2="102" y2="107" stroke="#94A3B8" stroke-width="1.5"/>
+    <polygon points="102,111 98,104 106,104" fill="#94A3B8"/>
+  </g>
+</svg>
