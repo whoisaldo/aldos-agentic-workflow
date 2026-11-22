@@ -122,8 +122,10 @@ class TrifectaConfigTests(unittest.TestCase):
             'reviewers[0].weight: required, a positive number': lambda c: c['reviewers'][0].update(
                 providerInstanceId='other', model='other-model', weight=None) or c['reviewers'][0].pop('weight'),
             'builders[1].switch_at_percent: a number from 1 to 100': lambda c: c['builders'][1].update(switch_at_percent=150),
-            'usage_sources.reviewer-codex.type: only "cliproxyapi" is supported': lambda c: c['usage_sources']['reviewer-codex'].update(type='other'),
+            'usage_sources.reviewer-codex.type: "cliproxyapi" or "codex-logs"': lambda c: c['usage_sources']['reviewer-codex'].update(type='other'),
             'builders[0].model: required': lambda c: c['builders'][0].pop('model'),
+            'coordinator.page_windows: list of weekly window names (weekly, fable_weekly)': lambda c: c['coordinator'].update(page_windows=['five_hour']),
+            'page_at_left_percent: a number from 0 to 100': lambda c: c.update(page_at_left_percent=101),
         }
         for message, change in cases.items():
             with self.subTest(message):
@@ -178,7 +180,7 @@ class ReadingTests(unittest.TestCase):
             source['url'] = (self.builder if name == 'builder-claude' else self.main).url
         self.path = root / 'trifecta.json'
         self.path.write_text(json.dumps(self.config))
-        self.environ = {'TRIFECTA_CONFIG': str(self.path)}
+        self.environ = {'TRIFECTA_CONFIG': str(self.path), 'HOME': str(root)}
 
     def tearDown(self):
         self.main.close()
@@ -299,7 +301,7 @@ class SleepUntilResetTests(unittest.TestCase):
         for source in config['usage_sources'].values():
             source['key_file'] = str(root / 'key.json')
         (root / 'trifecta.json').write_text(json.dumps(config))
-        self.environ = {'TRIFECTA_CONFIG': str(root / 'trifecta.json')}
+        self.environ = {'TRIFECTA_CONFIG': str(root / 'trifecta.json'), 'HOME': str(root)}
         self.naps = []
 
     def tearDown(self):
@@ -357,6 +359,93 @@ class SleepUntilResetTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             run(['--sleep-until-reset', 'neither'], self.environ)
         self.assertEqual(caught.exception.code, 2)
+
+
+class WeeklyPageAndCodexLogTests(unittest.TestCase):
+    def write_codex_log(self, root, name, events, mtime):
+        folder = root / NOW.astimezone().strftime('%Y/%m/%d')
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / name
+        path.write_text(''.join(json.dumps(e) + '\n' for e in events))
+        import os
+        os.utime(path, (mtime, mtime))
+
+    def codex_event(self, minutes_ago, used, window_minutes=10080):
+        at = (NOW - dt.timedelta(minutes=minutes_ago)).isoformat().replace('+00:00', 'Z')
+        return {'timestamp': at, 'type': 'event_msg', 'payload': {'type': 'token_count', 'rate_limits': {
+            'primary': {'used_percent': used, 'window_minutes': window_minutes, 'resets_at': int(epoch(3 * 24 * 60))},
+            'secondary': None}}}
+
+    def test_fable_weekly_and_three_percent_left_paging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'key.json').write_text(json.dumps({'management_key': 'fixture-key'}))
+            config = json.loads((SKILL / 'trifecta.example.json').read_text())
+            for source in config['usage_sources'].values():
+                source['key_file'] = str(root / 'key.json')
+            coord_auth = claude_auth(0.99, 60, weekly=0.97, age=5)
+            coord_auth['model_quotas'] = {'claude-fable-5-2': {'observed_at': observed(10), 'signals': {
+                'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '0.96',
+                'Anthropic-Ratelimit-Unified-7d_oi-Reset': epoch(2 * 24 * 60)}}}
+            builder_auth = claude_auth(0.99, 60, weekly=0.99, age=5)
+            builder_auth['model_quotas'] = {'claude-fable-5-2': {'observed_at': observed(8), 'signals': {
+                'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '0.98',
+                'Anthropic-Ratelimit-Unified-7d_oi-Reset': epoch(2 * 24 * 60)}}}
+            main_gw = FakeGateway([coord_auth, codex_auth(97)])
+            builder_gw = FakeGateway([builder_auth])
+            try:
+                for name, source in config['usage_sources'].items():
+                    source['url'] = (builder_gw if name == 'builder-claude' else main_gw).url
+                cfg_path = root / 'trifecta.json'
+                cfg_path.write_text(json.dumps(config))
+                environ = {'TRIFECTA_CONFIG': str(cfg_path), 'HOME': str(root)}
+                code, jout = run(['--json'], environ, fetch=usage.fetch_auth_files)
+                self.assertEqual(code, 0)
+                roles = json.loads(jout)['roles']
+                self.assertEqual(roles['coordinator']['page_due'], ['weekly'])
+                self.assertEqual(roles['coordinator']['fable_weekly']['used'], 0.96)
+                self.assertEqual(roles['builder1']['page_due'], ['fable_weekly'])
+                self.assertEqual(roles['reviewer1']['page_due'], ['weekly'])
+                # Five-hour at 99% never triggers a page.
+                code, text = run([], environ, fetch=usage.fetch_auth_files)
+                self.assertEqual(code, 0)
+                self.assertIn('PAGE: coordinator (Coordinator account) weekly has 3% left', text)
+                self.assertIn('PAGE: builder1 (Builder seat) Fable weekly has 2% left', text)
+                self.assertIn('PAGE: reviewer1 (GPT reviewer) weekly has 3% left', text)
+                self.assertIn('Fable weekly 96%', text)
+                # Rolled-over weekly window never pages.
+                main_gw.files = [claude_auth(0.1, 60, weekly=0.99, weekly_reset_min=-10), codex_auth(10)]
+                roles = json.loads(run(['--json'], environ, fetch=usage.fetch_auth_files)[1])['roles']
+                self.assertEqual(roles['coordinator']['page_due'], [])
+            finally:
+                main_gw.close()
+                builder_gw.close()
+
+    def test_codex_logs_win_when_newer_and_ignore_five_hour_windows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sessions = root / '.codex/sessions'
+            self.write_codex_log(sessions, 'old.jsonl', [self.codex_event(30, 80)], NOW.timestamp() - 1800)
+            self.write_codex_log(sessions, 'new.jsonl', [self.codex_event(5, 85), self.codex_event(2, 86), {'type': 'response_item'}], NOW.timestamp() - 60)
+            self.write_codex_log(sessions, 'five.jsonl', [self.codex_event(1, 99, window_minutes=300)], NOW.timestamp())
+            reading, _ = usage.codex_log_reading(str(sessions), NOW, 20)
+            self.assertEqual(reading['weekly']['used'], 0.86)
+            self.assertEqual(reading['age_minutes'], 2)
+            self.assertEqual(reading['source'], 'Codex logs')
+            # Standalone codex-logs source works with no gateway at all.
+            config = json.loads((SKILL / 'trifecta.example.json').read_text())
+            config['usage_sources'] = {'codex-only': {'type': 'codex-logs', 'codex_sessions': str(sessions)}}
+            config['coordinator'].pop('usage')
+            for b in config['builders']:
+                b.pop('usage')
+            config['reviewers'] = [{**config['reviewers'][0], 'usage': 'codex-only'}]
+            cfg_path = root / 'trifecta.json'
+            cfg_path.write_text(json.dumps(config))
+            code, output = run(['--json'], {'TRIFECTA_CONFIG': str(cfg_path), 'HOME': str(root)})
+            self.assertEqual(code, 0)
+            r1 = json.loads(output)['roles']['reviewer1']
+            self.assertEqual(r1['weekly']['used'], 0.86)
+            self.assertEqual(r1['source'], 'Codex logs')
 
 
 if __name__ == '__main__':

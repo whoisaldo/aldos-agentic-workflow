@@ -1,6 +1,6 @@
 ---
 name: codex-image
-description: "Generate real raster images (PNG) via the Codex CLI's built-in image_gen tool — hero images, marketing visuals, illustrations, mascots, textures, backgrounds, product/device mockups, concept art, og:image cards, empty-state art, transparent cutouts. Use when a task needs an actual picture that would otherwise be faked with hand-written SVG, CSS gradients, emoji, or a placeholder box. Do NOT use for building or changing UI code, layout, CSS, components, data charts, existing SVG icon systems, or screenshots of a real running app. Do NOT use when the deliverable is a 3D object or scene, or a vector object, that must be rotated, animated part by part, or embedded as geometry (three.js/WebGL, animatable SVG): use codex-3d for collaborative modeling with GPT-6.1 Sol at max reasoning."
+description: "Generate real raster images (PNG) via the Codex CLI's built-in image_gen tool — hero images, marketing visuals, illustrations, mascots, textures, backgrounds, product/device mockups, concept art, og:image cards, empty-state art, transparent cutouts. Use when a task needs an actual picture that would otherwise be faked with hand-written SVG, CSS gradients, emoji, or a placeholder box. Do NOT use for building or changing UI code, layout, CSS, components, data charts, existing SVG icon systems, or screenshots of a real running app. Do NOT use when the deliverable is a 3D object or scene, or a vector object, that must be rotated, animated part by part, or embedded as geometry (three.js/WebGL, animatable SVG): use codex-3d for collaborative modeling with GPT-6.2 Sol at max reasoning."
 ---
 
 Fleet execution: use a configured macOS/POSIX host with the user's native personal Codex account. These bridges are for personal work. Employer work must use its approved environment and must not cross into a personal account. Dependencies live outside the immutable release in `~/.cache/agent-skills`, overridable with `AGENT_SKILL_CACHE_DIR`. From Windows, use an explicitly configured Mac worker and copy the artifacts back.
@@ -53,7 +53,7 @@ capture**:
 - **A 3D object or an animatable vector object.** If it must be rotated,
   lit in real time, animated part by part (wheels spin, lid opens), or
   dropped into a three.js/WebGL scene, use `codex-3d` to collaborate with
-  GPT-6.1 Sol at max reasoning. A flat
+  GPT-6.2 Sol at max reasoning. A flat
   picture of a 3D-looking thing is still this skill.
 
 > Rule of thumb: if the result should scale infinitely, be themeable, or reflect

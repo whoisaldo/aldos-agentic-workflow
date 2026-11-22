@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import uuid
 
-from fleetlib import ROOT, atomic_write, encode, http_json, load_config, read_json, state_dir
+from fleetlib import ROOT, atomic_write, encode, http_json, load_config, read_json, state_dir, t3_protocol
 
 
 def main():
@@ -20,6 +20,9 @@ def main():
     config = load_config()
     state = state_dir(config)
     key = read_json(state / "private/t3-session.json")["access_token"]
+    if t3_protocol() != 1:
+        raise SystemExit("T3 speaks orchestration protocol 2: it takes commands only over its websocket and "
+                         "returns thread snapshots in a new shape. This check speaks protocol 1 and sends nothing.")
     record = state / "private" / ("t3-check-" + args.run + ".json")
     def call(path, data=None):
         return http_json("http://127.0.0.1:3773" + path, key, "GET" if data is None else "POST", data, timeout=45)

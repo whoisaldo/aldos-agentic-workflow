@@ -19,7 +19,7 @@ Use the following division of work:
 | You need | Skill |
 |---|---|
 | A picture (hero, illustration, mockup) | `codex-image` |
-| An object (three.js module, animatable SVG) | `codex-3d`: Claude collaborates with GPT-6.1 Sol at max |
+| An object (three.js module, animatable SVG) | `codex-3d`: Claude collaborates with GPT-6.2 Sol at max |
 | To know whether a running page is right | **`codex-computer-use`** |
 
 **Auth:** the existing ChatGPT OAuth login in `codex`. No API key. It runs on

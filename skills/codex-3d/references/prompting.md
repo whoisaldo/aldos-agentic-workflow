@@ -3,7 +3,7 @@
 Load this when a first build missed, when the object has many moving parts,
 or when several objects must look like one set. Give Sol the constraints and
 your proposed approach; ask it to check the geometry and explain better
-alternatives. Every call uses GPT-6.1 Sol at max reasoning.
+alternatives. Every call uses GPT-6.2 Sol at max reasoning.
 
 ## The four rules that matter most
 

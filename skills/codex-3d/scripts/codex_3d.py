@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 codex_3d.py - build real 3D objects (three.js modules) and 2D vector objects
-(SVG) by handing the modelling job to GPT-6.1 Sol through the Codex CLI, then
+(SVG) by handing the modelling job to GPT-6.2 Sol through the Codex CLI, then
 rendering the result headlessly so it can be inspected.
 
 Auth: whatever `codex` is already logged in with (ChatGPT OAuth). No API key.
@@ -45,7 +45,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 THREE_VERSION = "0.186.0"
-DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_MODEL = "gpt-6.2-sol"
 REASONING_EFFORT = "max"
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -720,7 +720,7 @@ def parse_size(s):
 def main():
     ap = argparse.ArgumentParser(
         description="Build a 3D object (three.js module, or a GLB modelled in Blender) or 2D "
-                    "vector object (SVG) with GPT-6.1 Sol via Codex, then render it headlessly "
+                    "vector object (SVG) with GPT-6.2 Sol via Codex, then render it headlessly "
                     "for inspection.")
     ap.add_argument("--prompt", help="Object specification text.")
     ap.add_argument("--prompt-file", help="File containing the specification.")

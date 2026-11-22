@@ -4,7 +4,9 @@
 Usage gateways record the rate-limit headers of every response that passes
 through them. A role only has fresh numbers if a request went through its
 source recently, so each reading carries its age and is marked STALE after
-stale_minutes. Read-only: it never signs in, switches accounts or starts tasks.
+stale_minutes. A Codex role can also read native Codex session logs, taking
+whichever reading is newer. Read-only: it never signs in, switches accounts
+or starts tasks.
 
 The config is TRIFECTA_CONFIG, or trifecta.json next to SKILL.md. Copy
 trifecta.example.json to start. Without a valid config nothing is fetched.
@@ -24,20 +26,34 @@ import urllib.request
 SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = SKILL_DIR / "trifecta.json"
 MAX_NAP_SECONDS = 110 * 60  # under the two-hour cap on a background command
-FIELD_KEYS = {"five_hour_used", "five_hour_reset", "weekly_used", "weekly_reset", "status"}
+TAIL_BYTES = 4 << 20
+DEFAULT_PAGE_AT_LEFT = 3
+FIELD_KEYS = {"five_hour_used", "five_hour_reset", "weekly_used", "weekly_reset",
+              "fable_weekly_used", "fable_weekly_reset", "status"}
+PAGE_WINDOW_KEYS = ("weekly", "fable_weekly")
+WINDOW_LABELS = {"weekly": "weekly", "fable_weekly": "Fable weekly"}
 # TRIFECTA_<ROLE>_GATEWAY_URL and _KEY_FILE override the usage source of that role.
 ENV_OVERRIDES = [("TRIFECTA_COORDINATOR", "coordinator"), ("TRIFECTA_BUILDER", "builder1"), ("TRIFECTA_REVIEWER", "reviewer1")]
 ROLE_KEYS = {
-    "coordinator": {"label", "providerInstanceId", "model", "options", "usage"},
-    "builder": {"label", "providerInstanceId", "model", "options", "usage", "switch_at_percent"},
-    "reviewer": {"label", "providerInstanceId", "model", "options", "usage", "weight"},
+    "coordinator": {"label", "providerInstanceId", "model", "options", "usage", "page_windows"},
+    "builder": {"label", "providerInstanceId", "model", "options", "usage", "switch_at_percent", "page_windows"},
+    "reviewer": {"label", "providerInstanceId", "model", "options", "usage", "weight", "page_windows"},
 }
-SOURCE_KEYS = {"type", "url", "key_file", "provider", "used_unit", "fields"}
-TOP_KEYS = {"coordinator", "builders", "reviewers", "max_parallel_builders", "never_use", "stale_minutes", "usage_sources"}
+SOURCE_KEYS = {"type", "url", "key_file", "provider", "used_unit", "fields", "codex_sessions"}
+CODEX_LOG_SOURCE_KEYS = {"type", "codex_sessions"}
+TOP_KEYS = {"coordinator", "builders", "reviewers", "max_parallel_builders", "never_use",
+            "stale_minutes", "page_at_left_percent", "usage_sources"}
+
+
+def expand_path(raw, environ=None):
+    text = str(raw)
+    if text.startswith("~/") and environ and environ.get("HOME"):
+        return Path(environ["HOME"]) / text[2:]
+    return Path(text).expanduser()
 
 
 def config_path(environ):
-    return Path(environ["TRIFECTA_CONFIG"]).expanduser() if environ.get("TRIFECTA_CONFIG") else DEFAULT_CONFIG
+    return expand_path(environ["TRIFECTA_CONFIG"], environ) if environ.get("TRIFECTA_CONFIG") else DEFAULT_CONFIG
 
 
 def default_weight(reviewer):
@@ -66,12 +82,16 @@ def validate(raw):
         "max_parallel_builders": raw.get("max_parallel_builders", 2),
         "never_use": raw.get("never_use", []),
         "stale_minutes": raw.get("stale_minutes", 20),
+        "page_at_left_percent": raw.get("page_at_left_percent", DEFAULT_PAGE_AT_LEFT),
         "usage_sources": raw.get("usage_sources", {}),
     }
-    if not isinstance(config["max_parallel_builders"], int) or config["max_parallel_builders"] < 1:
+    if not isinstance(config["max_parallel_builders"], int) or isinstance(config["max_parallel_builders"], bool) or config["max_parallel_builders"] < 1:
         errors.append("max_parallel_builders: must be a whole number of at least 1")
-    if not isinstance(config["stale_minutes"], (int, float)) or config["stale_minutes"] <= 0:
+    if not isinstance(config["stale_minutes"], (int, float)) or isinstance(config["stale_minutes"], bool) or config["stale_minutes"] <= 0:
         errors.append("stale_minutes: must be a positive number")
+    pal = config["page_at_left_percent"]
+    if not isinstance(pal, (int, float)) or isinstance(pal, bool) or not 0 <= pal <= 100:
+        errors.append("page_at_left_percent: a number from 0 to 100")
     if not isinstance(config["never_use"], list) or not all(isinstance(x, str) for x in config["never_use"]):
         errors.append("never_use: must be a list of provider instance ids")
         config["never_use"] = []
@@ -85,9 +105,17 @@ def validate(raw):
         if not isinstance(source, dict):
             errors.append(f"{where}: must be an object")
             continue
+        kind = source.get("type")
+        if kind == "codex-logs":
+            unknown_keys(source, CODEX_LOG_SOURCE_KEYS, where, errors)
+            source.setdefault("codex_sessions", "~/.codex/sessions")
+            if not isinstance(source["codex_sessions"], str) or not source["codex_sessions"]:
+                errors.append(f"{where}.codex_sessions: must be a non-empty path")
+            continue
         unknown_keys(source, SOURCE_KEYS, where, errors)
-        if source.get("type") != "cliproxyapi":
-            errors.append(f"{where}.type: only \"cliproxyapi\" is supported")
+        if kind != "cliproxyapi":
+            errors.append(f'{where}.type: "cliproxyapi" or "codex-logs"')
+            continue
         if not str(source.get("url", "")).startswith(("http://", "https://")):
             errors.append(f"{where}.url: must be an http(s) URL")
         for key in ("key_file", "provider"):
@@ -95,27 +123,32 @@ def validate(raw):
                 errors.append(f"{where}.{key}: required")
         source.setdefault("used_unit", "fraction")
         if source["used_unit"] not in {"fraction", "percent"}:
-            errors.append(f"{where}.used_unit: \"fraction\" or \"percent\"")
+            errors.append(f'{where}.used_unit: "fraction" or "percent"')
+        if "codex_sessions" in source and (not isinstance(source["codex_sessions"], str) or not source["codex_sessions"]):
+            errors.append(f"{where}.codex_sessions: must be a non-empty path")
         fields = source.get("fields")
         if not isinstance(fields, dict) or not all(isinstance(v, str) for v in fields.values()):
             errors.append(f"{where}.fields: map of reading fields to header names")
         else:
             unknown_keys(fields, FIELD_KEYS, f"{where}.fields", errors)
-            if not {"five_hour_used", "weekly_used"} & set(fields):
-                errors.append(f"{where}.fields: needs five_hour_used or weekly_used")
+            if not {"five_hour_used", "weekly_used", "fable_weekly_used"} & set(fields):
+                errors.append(f"{where}.fields: needs five_hour_used, weekly_used or fable_weekly_used")
 
     def role(obj, kind, where, defaults):
         if not isinstance(obj, dict):
             errors.append(f"{where}: must be an object")
             return None
         unknown_keys(obj, ROLE_KEYS[kind], where, errors)
-        entry = {**defaults, "options": {}, **obj}
+        entry = {**defaults, "options": {}, "page_windows": [], **obj}
         required = ["label"] if kind == "coordinator" else ["label", "providerInstanceId", "model"]
         for key in required:
             if not isinstance(entry.get(key), str) or not entry.get(key):
                 errors.append(f"{where}.{key}: required")
         if not isinstance(entry["options"], dict):
             errors.append(f"{where}.options: must be an object")
+        pw = entry["page_windows"]
+        if not isinstance(pw, list) or not all(isinstance(x, str) and x in PAGE_WINDOW_KEYS for x in pw):
+            errors.append(f"{where}.page_windows: list of weekly window names ({', '.join(PAGE_WINDOW_KEYS)})")
         if "usage" in entry and (not isinstance(entry["usage"], str) or entry["usage"] not in sources):
             errors.append(f"{where}.usage: no usage source named {entry['usage']!r}")
         if entry.get("providerInstanceId") in config["never_use"]:
@@ -132,13 +165,13 @@ def validate(raw):
         config[key] = [role(item, kind, f"{key}[{i}]", defaults) for i, item in enumerate(items)]
     for i, builder in enumerate(config["builders"]):
         percent = builder and builder["switch_at_percent"]
-        if builder and (not isinstance(percent, (int, float)) or not 0 < percent <= 100):
+        if builder and (not isinstance(percent, (int, float)) or isinstance(percent, bool) or not 0 < percent <= 100):
             errors.append(f"builders[{i}].switch_at_percent: a number from 1 to 100")
     for i, reviewer in enumerate(config["reviewers"]):
         if reviewer is None:
             continue
         reviewer.setdefault("weight", default_weight(reviewer))
-        if not isinstance(reviewer["weight"], (int, float)) or reviewer["weight"] <= 0:
+        if not isinstance(reviewer["weight"], (int, float)) or isinstance(reviewer["weight"], bool) or reviewer["weight"] <= 0:
             errors.append(f"reviewers[{i}].weight: required, a positive number")
     return config, errors
 
@@ -148,8 +181,9 @@ def apply_env_overrides(config, environ):
         name = next((r.get("usage") for r in roles(config) if r["id"] == role_id), None)
         if name and name in config["usage_sources"]:
             source = config["usage_sources"][name]
-            source["url"] = environ.get(prefix + "_GATEWAY_URL") or source.get("url")
-            source["key_file"] = environ.get(prefix + "_KEY_FILE") or source.get("key_file")
+            if source.get("type") == "cliproxyapi":
+                source["url"] = environ.get(prefix + "_GATEWAY_URL") or source.get("url")
+                source["key_file"] = environ.get(prefix + "_KEY_FILE") or source.get("key_file")
 
 
 def load_config(environ):
@@ -200,10 +234,10 @@ def request_error(error):
     return "request failed"
 
 
-def request_files(source, fetch):
+def request_files(source, fetch, environ=None):
     """(auth files, None), or (None, a problem that is safe to print)."""
     try:
-        key = json.loads(Path(source["key_file"]).expanduser().read_text())["management_key"]
+        key = json.loads(expand_path(source["key_file"], environ).read_text())["management_key"]
     except OSError:
         return None, "key file unreadable"
     except (ValueError, KeyError, TypeError):
@@ -218,15 +252,20 @@ def request_files(source, fetch):
         return None, f"{request_error(error)} ({type(error).__name__})"
 
 
-def latest_reading(auth):
+def latest_reading(auth, signal=None):
     """The newest non-empty signal set among the account and per-model views."""
     readings = [auth.get("quota") or {}] + list((auth.get("model_quotas") or {}).values())
-    readings = [r for r in readings if r.get("signals") and r.get("observed_at")]
+    readings = [r for r in readings if r.get("signals") and r.get("observed_at")
+                and (signal is None or signal in r["signals"])]
     return max(readings, key=lambda r: dt.datetime.fromisoformat(r["observed_at"]), default=None)
 
 
 def local_time(moment):
     return moment.astimezone().isoformat(timespec="minutes")
+
+
+def age_minutes(observed, now):
+    return int((now - observed).total_seconds() // 60)
 
 
 def window(used, reset, now):
@@ -238,29 +277,87 @@ def window(used, reset, now):
     return {"used": round(used, 2), "resets_at": local_time(reset) if reset else None}
 
 
-def summarize(source, reading, now, stale_minutes):
+def summarize(source, reading, now, stale_minutes, auth=None):
     """The printed reading, plus (used, reset) for each window as it was read."""
     signals, fields = reading["signals"], source["fields"]
     scale = 100 if source["used_unit"] == "percent" else 1
 
-    def used(key):
-        value = signals.get(fields[key]) if key in fields else None
+    def used(sig_map, key):
+        value = sig_map.get(fields[key]) if key in fields else None
         return None if value is None else float(value) / scale
 
-    def reset(key):
-        value = signals.get(fields[key]) if key in fields else None
+    def reset(sig_map, key):
+        value = sig_map.get(fields[key]) if key in fields else None
         return dt.datetime.fromtimestamp(int(float(value)), dt.timezone.utc) if value else None
 
     observed = dt.datetime.fromisoformat(reading["observed_at"])
-    out = {"age_minutes": int((now - observed).total_seconds() // 60)}
+    out = {"age_minutes": age_minutes(observed, now)}
     windows = []
     for name in ("five_hour", "weekly"):
-        raw = (used(name + "_used"), reset(name + "_reset"))
+        raw = (used(signals, name + "_used"), reset(signals, name + "_reset"))
         out[name] = window(*raw, now)
         if raw[0] is not None:
             windows.append(raw)
+    if "fable_weekly_used" in fields:
+        # A model-specific weekly allowance appears only on responses to that model.
+        fable = latest_reading(auth, fields["fable_weekly_used"]) if auth else None
+        if fable:
+            f_sig = fable["signals"]
+            f_win = window(used(f_sig, "fable_weekly_used"), reset(f_sig, "fable_weekly_reset"), now)
+            if f_win is not None:
+                f_win["age_minutes"] = age_minutes(dt.datetime.fromisoformat(fable["observed_at"]), now)
+            out["fable_weekly"] = f_win
+        else:
+            out["fable_weekly"] = None
     out["status"] = signals.get(fields["status"]) if "status" in fields else None
     out["stale"] = out["age_minutes"] > stale_minutes
+    return out, windows
+
+
+def codex_log_reading(sessions_dir, now, stale_minutes, environ=None):
+    """The weekly limit native Codex logged most recently, or None."""
+    root = expand_path(sessions_dir, environ)
+    if not root.is_dir():
+        return None
+    files = []
+    for days in range(8):
+        folder = root / (now.astimezone() - dt.timedelta(days=days)).strftime("%Y/%m/%d")
+        if folder.is_dir():
+            files += [(p.stat().st_mtime, p) for p in folder.glob("*.jsonl")]
+    best = None
+    for mtime, path in sorted(files, reverse=True):
+        # A file last written before the best reading cannot hold a newer one.
+        if best and mtime < best[0].timestamp():
+            break
+        with open(path, "rb") as stream:
+            stream.seek(max(0, path.stat().st_size - TAIL_BYTES))
+            lines = stream.read().decode("utf-8", "replace").splitlines()
+        for line in reversed(lines):
+            if '"rate_limits"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+                limits = event["payload"]["rate_limits"]
+                observed = dt.datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00"))
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+            weekly = next((w for w in (limits.get("primary"), limits.get("secondary"))
+                           if isinstance(w, dict) and w.get("window_minutes") == 10080), None)
+            if weekly:
+                if not best or observed > best[0]:
+                    best = (observed, weekly)
+                break
+    if not best:
+        return None
+    observed, weekly = best
+    used_pct = weekly.get("used_percent")
+    used_frac = None if used_pct is None else float(used_pct) / 100
+    reset_epoch = weekly.get("resets_at")
+    reset_dt = dt.datetime.fromtimestamp(int(float(reset_epoch)), dt.timezone.utc) if reset_epoch else None
+    minutes = age_minutes(observed, now)
+    out = {"age_minutes": minutes, "five_hour": None, "weekly": window(used_frac, reset_dt, now),
+           "status": None, "source": "Codex logs", "stale": minutes > stale_minutes}
+    windows = [(used_frac, reset_dt)] if used_frac is not None else []
     return out, windows
 
 
@@ -275,8 +372,18 @@ def blocking(windows, status, threshold, now):
     return bool(pending), max(filter(None, pending), default=None)
 
 
-def read_roles(config, now, fetch=fetch_auth_files):
-    result, responses = {}, {}
+def page_due(role, summary, page_at_left):
+    """The configured weekly windows of this role that are at or under the paging threshold."""
+    due = []
+    for key in role.get("page_windows") or ():
+        w = summary.get(key)
+        if w and not w.get("rolled_over") and round((1 - w["used"]) * 100) <= page_at_left:
+            due.append(key)
+    return due
+
+
+def read_roles(config, now, fetch=fetch_auth_files, environ=None):
+    result, responses, codex_cache = {}, {}, {}
     for role in roles(config):
         entry = {"kind": role["kind"], "label": role["label"], "providerInstanceId": role.get("providerInstanceId")}
         result[role["id"]] = entry
@@ -285,30 +392,44 @@ def read_roles(config, now, fetch=fetch_auth_files):
             continue
         name = role["usage"]
         source = config["usage_sources"][name]
-        target = (source["url"], source["key_file"])
-        if target not in responses:  # several roles may share one gateway
-            responses[target] = request_files(source, fetch)
-        files, problem = responses[target]
-        try:
-            auth = None if problem else next((f for f in files if f.get("provider") == source["provider"]), None)
-            reading = auth and latest_reading(auth)
-            if reading:
-                summary, windows = summarize(source, reading, now, config["stale_minutes"])
-                # Builders switch at their threshold; any role is blocked once a window runs out.
-                blocked, reset = blocking(windows, summary["status"], role.get("switch_at_percent", 100), now)
-                summary["blocking_reset"] = local_time(reset) if reset else None
-                if role["kind"] == "builder":
-                    summary["at_threshold"] = blocked
-        except Exception as error:  # parse errors can quote response data; print only the class
-            problem = f"unreadable reading ({type(error).__name__})"
-        if problem:
-            entry["error"] = f"{problem} on usage source {name}"
-        elif auth is None:
-            entry["error"] = f"no {source['provider']} account on usage source {name}"
-        elif not reading:
-            entry["error"] = "no reading yet"
-        else:
+        summary, windows, problem, auth, reading = None, [], None, None, None
+        if source["type"] == "cliproxyapi":
+            target = (source["url"], source["key_file"])
+            if target not in responses:  # several roles may share one gateway
+                responses[target] = request_files(source, fetch, environ)
+            files, problem = responses[target]
+            try:
+                auth = None if problem else next((f for f in files if f.get("provider") == source["provider"]), None)
+                reading = auth and latest_reading(auth)
+                if reading:
+                    summary, windows = summarize(source, reading, now, config["stale_minutes"], auth=auth)
+            except Exception as error:  # parse errors can quote response data; print only the class
+                problem = f"unreadable reading ({type(error).__name__})"
+        if source.get("codex_sessions"):
+            sessions_key = source["codex_sessions"]
+            if sessions_key not in codex_cache:
+                try:
+                    codex_cache[sessions_key] = codex_log_reading(sessions_key, now, config["stale_minutes"], environ)
+                except OSError:
+                    codex_cache[sessions_key] = None
+            logged = codex_cache[sessions_key]
+            if logged and (summary is None or logged[0]["age_minutes"] < summary["age_minutes"]):
+                summary, windows = dict(logged[0]), list(logged[1])
+                problem = None
+        if summary is not None:
+            # Builders switch at their threshold; any role is blocked once a window runs out.
+            blocked, reset = blocking(windows, summary["status"], role.get("switch_at_percent", 100), now)
+            summary["blocking_reset"] = local_time(reset) if reset else None
+            if role["kind"] == "builder":
+                summary["at_threshold"] = blocked
+            summary["page_due"] = page_due(role, summary, config["page_at_left_percent"])
             entry.update(summary)
+        elif problem:
+            entry["error"] = f"{problem} on usage source {name}"
+        elif source["type"] == "cliproxyapi" and auth is None:
+            entry["error"] = f"no {source['provider']} account on usage source {name}"
+        else:
+            entry["error"] = "no reading yet"
     return result
 
 
@@ -359,17 +480,24 @@ def describe(config, environ, path):
             rule = f"weight {role['weight']} ({round(100 * role['weight'] / total)}% of reviews)"
         else:
             rule = "coordinates; the thread you are in"
+        if role.get("page_windows"):
+            rule += f"; page on {', '.join(role['page_windows'])}"
         lines.append(f"{role['id']:<12} {role['label']:<32} {role.get('providerInstanceId') or '-':<26} "
                      f"{role.get('model') or '-':<18} {json.dumps(role['options'], sort_keys=True):<26} "
                      f"{role.get('usage') or '-':<20} {rule}")
     lines += ["", f"max_parallel_builders: {config['max_parallel_builders']}",
               f"stale_minutes: {config['stale_minutes']}",
+              f"page_at_left_percent: {config['page_at_left_percent']}",
               f"never_use: {', '.join(config['never_use']) or 'none'}", "", "usage sources:"]
     for name, source in config["usage_sources"].items():
-        key_file = Path(source["key_file"]).expanduser()
+        if source["type"] == "codex-logs":
+            lines.append(f"  {name}: codex-logs codex_sessions={source['codex_sessions']}")
+            continue
+        key_file = expand_path(source["key_file"], environ)
         note = "" if key_file.is_file() else "  (key file not found yet)"
+        extra = f" codex_sessions={source['codex_sessions']}" if source.get("codex_sessions") else ""
         lines.append(f"  {name}: {source['type']} {shown_url(source['url'])} provider={source['provider']} "
-                     f"unit={source['used_unit']} key_file={source['key_file']}{note}")
+                     f"unit={source['used_unit']} key_file={source['key_file']}{extra}{note}")
     overrides = [k for prefix, _ in ENV_OVERRIDES for k in (prefix + "_GATEWAY_URL", prefix + "_KEY_FILE") if environ.get(k)]
     if overrides:
         lines.append("environment overrides: " + ", ".join(overrides))
@@ -406,22 +534,27 @@ def main(argv=None, environ=None, fetch=fetch_auth_files, now=None, sleep=time.s
         ids = [r["id"] for r in roles(config)]
         if args.sleep_until_reset not in ids:
             parser.error(f"unknown role {args.sleep_until_reset!r}; choose from {', '.join(ids)}")
-        readings = read_roles(config, now(), fetch)
+        readings = read_roles(config, now(), fetch, environ)
         return sleep_until_reset(args.sleep_until_reset, readings, now, sleep)
-    readings = read_roles(config, now(), fetch)
+    readings = read_roles(config, now(), fetch, environ)
     if args.json:
         print(json.dumps({"config": str(path), "configured": True, "stale_minutes": config["stale_minutes"],
-                          "roles": readings}, indent=2))
+                          "page_at_left_percent": config["page_at_left_percent"], "roles": readings}, indent=2))
         return 0
     for role_id, r in readings.items():
         name = f"{role_id:<12} {r['label']} ({r['providerInstanceId'] or 'this thread'})"
         if "error" in r:
             print(f"{name}: unknown, {r['error']}")
             continue
-        age = f"read {r['age_minutes']} min ago" + (", STALE" if r["stale"] else "")
+        fable = r.get("fable_weekly")
+        fable_text = f"; Fable weekly {pct(fable)}, read {fable['age_minutes']} min ago" if fable else ""
+        age = f"read {r['age_minutes']} min ago" + (f" from {r['source']}" if r.get("source") else "") + (", STALE" if r["stale"] else "")
         status = f"; status {r['status']}" if r.get("status") else ""
         threshold = "; AT THRESHOLD, start nothing large here" if r.get("at_threshold") else ""
-        print(f"{name}: 5-hour {pct(r['five_hour'])}; weekly {pct(r['weekly'])}{status}; {age}{threshold}")
+        print(f"{name}: 5-hour {pct(r['five_hour'])}; weekly {pct(r['weekly'])}{fable_text}{status}; {age}{threshold}")
+    for role_id, r in readings.items():
+        for key in r.get("page_due") or ():
+            print(f"PAGE: {role_id} ({r['label']}) {WINDOW_LABELS[key]} has {round((1 - r[key]['used']) * 100)}% left ({pct(r[key])})")
     return 0
 
 

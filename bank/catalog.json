@@ -330,7 +330,7 @@
     },
     "codex-3d": {
       "path": "skills/codex-3d",
-      "description": "Collaboratively build and refine 3D geometry and animatable vector objects with Claude and GPT-6.1 Sol through Codex, exclusively at max reasoning. Use for three.js/WebGL objects, GLB/glTF or Blender models, procedural assets, or SVG objects with independently animated parts. Claude develops the brief, reviews the geometry and renders, and integrates the result; Sol reasons through modeling choices and implements or revises the asset. Static pictures belong to codex-image. Excludes UI layout, charts, icon sets, and app screenshots.",
+      "description": "Collaboratively build and refine 3D geometry and animatable vector objects with Claude and GPT-6.2 Sol through Codex, exclusively at max reasoning. Use for three.js/WebGL objects, GLB/glTF or Blender models, procedural assets, or SVG objects with independently animated parts. Claude develops the brief, reviews the geometry and renders, and integrates the result; Sol reasons through modeling choices and implements or revises the asset. Static pictures belong to codex-image. Excludes UI layout, charts, icon sets, and app screenshots.",
       "runtime": "claude-personal",
       "requires": [
         "personal-bridges"
@@ -346,7 +346,7 @@
     },
     "codex-image": {
       "path": "skills/codex-image",
-      "description": "Generate real raster images (PNG) via the Codex CLI's built-in image_gen tool \u2014 hero images, marketing visuals, illustrations, mascots, textures, backgrounds, product/device mockups, concept art, og:image cards, empty-state art, transparent cutouts. Use when a task needs an actual picture that would otherwise be faked with hand-written SVG, CSS gradients, emoji, or a placeholder box. Do NOT use for building or changing UI code, layout, CSS, components, data charts, existing SVG icon systems, or screenshots of a real running app. Do NOT use when the deliverable is a 3D object or scene, or a vector object, that must be rotated, animated part by part, or embedded as geometry (three.js/WebGL, animatable SVG): use codex-3d for collaborative modeling with GPT-6.1 Sol at max reasoning.",
+      "description": "Generate real raster images (PNG) via the Codex CLI's built-in image_gen tool \u2014 hero images, marketing visuals, illustrations, mascots, textures, backgrounds, product/device mockups, concept art, og:image cards, empty-state art, transparent cutouts. Use when a task needs an actual picture that would otherwise be faked with hand-written SVG, CSS gradients, emoji, or a placeholder box. Do NOT use for building or changing UI code, layout, CSS, components, data charts, existing SVG icon systems, or screenshots of a real running app. Do NOT use when the deliverable is a 3D object or scene, or a vector object, that must be rotated, animated part by part, or embedded as geometry (three.js/WebGL, animatable SVG): use codex-3d for collaborative modeling with GPT-6.2 Sol at max reasoning.",
       "runtime": "claude-personal",
       "requires": [
         "personal-bridges"

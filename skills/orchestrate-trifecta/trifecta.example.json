@@ -3,7 +3,8 @@
   "coordinator": {
     "label": "Coordinator account",
     "providerInstanceId": "claudeAgent_coordinator",
-    "usage": "coordinator-claude"
+    "usage": "coordinator-claude",
+    "page_windows": ["weekly", "fable_weekly"]
   },
   "builders": [
     {
@@ -12,7 +13,8 @@
       "model": "claude-opus-5-5",
       "options": {"effort": "high"},
       "usage": "builder-claude",
-      "switch_at_percent": 85
+      "switch_at_percent": 85,
+      "page_windows": ["fable_weekly"]
     },
     {
       "label": "Coordinator account (fallback)",
@@ -27,10 +29,11 @@
     {
       "label": "GPT reviewer",
       "providerInstanceId": "codex",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6.2-sol",
       "options": {"reasoningEffort": "high"},
       "usage": "reviewer-codex",
-      "weight": 7
+      "weight": 7,
+      "page_windows": ["weekly"]
     },
     {
       "label": "Claude reviewer",
@@ -44,6 +47,7 @@
   "max_parallel_builders": 2,
   "never_use": ["claudeAgent_direct", "codex_old_seat"],
   "stale_minutes": 20,
+  "page_at_left_percent": 3,
   "usage_sources": {
     "coordinator-claude": {
       "type": "cliproxyapi",
@@ -56,6 +60,8 @@
         "five_hour_reset": "Anthropic-Ratelimit-Unified-5h-Reset",
         "weekly_used": "Anthropic-Ratelimit-Unified-7d-Utilization",
         "weekly_reset": "Anthropic-Ratelimit-Unified-7d-Reset",
+        "fable_weekly_used": "Anthropic-Ratelimit-Unified-7d_oi-Utilization",
+        "fable_weekly_reset": "Anthropic-Ratelimit-Unified-7d_oi-Reset",
         "status": "Anthropic-Ratelimit-Unified-Status"
       }
     },
@@ -70,6 +76,8 @@
         "five_hour_reset": "Anthropic-Ratelimit-Unified-5h-Reset",
         "weekly_used": "Anthropic-Ratelimit-Unified-7d-Utilization",
         "weekly_reset": "Anthropic-Ratelimit-Unified-7d-Reset",
+        "fable_weekly_used": "Anthropic-Ratelimit-Unified-7d_oi-Utilization",
+        "fable_weekly_reset": "Anthropic-Ratelimit-Unified-7d_oi-Reset",
         "status": "Anthropic-Ratelimit-Unified-Status"
       }
     },
@@ -79,6 +87,7 @@
       "key_file": "~/.config/trifecta/main-gateway.json",
       "provider": "codex",
       "used_unit": "percent",
+      "codex_sessions": "~/.codex/sessions",
       "fields": {
         "weekly_used": "X-Codex-Primary-Used-Percent",
         "weekly_reset": "X-Codex-Primary-Reset-At"

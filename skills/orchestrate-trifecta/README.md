@@ -108,11 +108,15 @@ sequenceDiagram
 2. **A usage source (optional but recommended).** `usage.py` reads the
    management API of a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
    gateway, which records the rate-limit headers of every response it
-   forwards. Route the builder and reviewer instances through a gateway to
+   forwards. Route the builder and coordinator instances through a gateway to
    make their windows visible. Save each gateway's management key in a local
    JSON file outside any repository, for example
    `~/.config/trifecta/builder-gateway.json` containing
-   `{"management_key": "..."}`, readable only by you. Without a usage source
+   `{"management_key": "..."}`, readable only by you. For a reviewer running
+   on native Codex outside the gateway, set `codex_sessions` (for example
+   `"~/.codex/sessions"`) on its gateway source or use a standalone
+   `type: "codex-logs"` source so `usage.py` reads native Codex's session
+   logs and picks whichever reading is newer. Without a usage source
    the workflow still runs; failover then goes by limit errors alone. See
    [the proxy module](../../docs/modules/proxy.md) for gateway setup.
 3. **Install the skill.** Copy this folder to `~/.claude/skills/orchestrate-trifecta`
@@ -151,12 +155,15 @@ sequenceDiagram
 | `max_parallel_builders` | no | `2` | Builders running at once |
 | `never_use` | no | `[]` | Provider instance ids never to start anything on |
 | `stale_minutes` | no | `20` | Readings older than this are marked STALE |
-| `usage_sources.NAME.type` | yes | | `cliproxyapi`, the gateway's `/v0/management/auth-files` API |
-| `usage_sources.NAME.url` | yes | | Gateway base URL |
-| `usage_sources.NAME.key_file` | yes | | Local JSON file with a `management_key` field |
-| `usage_sources.NAME.provider` | yes | | Which auth entry in the gateway to read, such as `claude` or `codex` |
+| `page_at_left_percent` | no | `3` | Weekly-window remaining % at or below which `usage.py` prints a `PAGE:` line |
+| `<role>.page_windows` | no | `[]` | Weekly windows (`weekly`, `fable_weekly`) that trigger a `PAGE:` line for `fleet page` |
+| `usage_sources.NAME.type` | yes | | `cliproxyapi` (gateway `/v0/management/auth-files`) or `codex-logs` (native Codex session JSONL logs) |
+| `usage_sources.NAME.url` | for `cliproxyapi` | | Gateway base URL |
+| `usage_sources.NAME.key_file` | for `cliproxyapi` | | Local JSON file with a `management_key` field |
+| `usage_sources.NAME.provider` | for `cliproxyapi` | | Which auth entry in the gateway to read, such as `claude` or `codex` |
 | `usage_sources.NAME.used_unit` | no | `fraction` | `fraction` (0 to 1) or `percent` (0 to 100) |
-| `usage_sources.NAME.fields` | yes | | Header names for `five_hour_used`, `five_hour_reset`, `weekly_used`, `weekly_reset` and `status`; at least one `*_used` |
+| `usage_sources.NAME.codex_sessions` | no | `~/.codex/sessions` (for `codex-logs`) | Native Codex sessions folder; on a `cliproxyapi` source, whichever reading is newer wins |
+| `usage_sources.NAME.fields` | for `cliproxyapi` | | Header names for `five_hour_used`, `five_hour_reset`, `weekly_used`, `weekly_reset`, `fable_weekly_used`, `fable_weekly_reset` and `status`; at least one `*_used` |
 
 Keys starting with `_` are ignored, for comments. Unknown keys are errors, so
 a typo cannot silently fall back to a default. Several roles can share one
@@ -173,8 +180,8 @@ source: `TRIFECTA_COORDINATOR_GATEWAY_URL`, `TRIFECTA_COORDINATOR_KEY_FILE`,
 
 | Command | Does | Exit |
 | --- | --- | --- |
-| `usage.py` | One line per role: use and reset for each configured window (`five_hour`, `weekly`), age, STALE, AT THRESHOLD | 0; 1 if the config is invalid |
-| `usage.py --json` | The same as JSON, with `blocking_reset`: when the last blocking window resets | as above |
+| `usage.py` | One line per role: use and reset for each configured window (`five_hour`, `weekly`, `fable_weekly`), age, STALE, AT THRESHOLD, plus `PAGE:` lines when a configured weekly window is at or under `page_at_left_percent` left | 0; 1 if the config is invalid |
+| `usage.py --json` | The same as JSON, with `blocking_reset` and `page_due` | as above |
 | `usage.py --check-config` | Validates the config and prints the role table; no network | 0 valid, 1 missing or invalid |
 | `usage.py --sleep-until-reset ROLE` | Sleeps until a minute after the latest reset of ROLE's blocking windows, at most 110 minutes | 0 reopened or nothing pending, 3 run again, 1 no valid config |
 

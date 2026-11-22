@@ -42,10 +42,20 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(migrate.plan(config, release, ["native"]), [])
 
     def test_active_turn_blocks_migration_except_maintenance_owner(self):
-        with patch.object(migrate, "read_json", return_value={"access_token": "fixture"}), patch.object(migrate, "http_json", return_value={"threads": [{"id": "other", "session": {"activeTurnId": "turn"}}]}):
+        with patch.object(migrate, "read_json", return_value={"access_token": "fixture"}), patch.object(migrate, "t3_get", return_value={"threads": [{"id": "other", "session": {"activeTurnId": "turn"}}]}):
             with self.assertRaisesRegex(ValueError, "active"):
                 migrate.assert_idle(Path("fixture"), ["maintenance"])
             migrate.assert_idle(Path("fixture"), ["other"])
+        # Protocol 2 statuses, pending waits and unexpected snapshots also refuse.
+        for shell, pattern in [
+            ({"threads": [{"id": "p2", "status": "waiting"}]}, "active"),
+            ({"threads": [{"id": "p2bg", "status": "idle", "pendingBackgroundTasks": [{"id": "t"}]}]}, "active"),
+            ({"threads": [{"id": "mystery", "status": "unseen-state"}]}, "active"),
+            ({"threads": [{"id": "bad"}]}, "cannot read"),
+        ]:
+            with patch.object(migrate, "read_json", return_value={"access_token": "fixture"}), patch.object(migrate, "t3_get", return_value=shell):
+                with self.assertRaisesRegex(ValueError, pattern):
+                    migrate.assert_idle(Path("fixture"), [])
 
     def test_preflight_detects_changes_before_touching_any_entry(self):
         with tempfile.TemporaryDirectory() as temp:

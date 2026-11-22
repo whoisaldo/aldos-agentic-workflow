@@ -643,5 +643,89 @@ class InitAndCheckTests(unittest.TestCase):
         self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(bad))
 
 
+class GatewayStatusAndFingerprintTests(FleetCLITestCase):
+    def run_cli(self, *args, config=None, input_text=None):
+        cfg_path = self.root / 'fleet-test.json'
+        cfg_path.write_text(json.dumps(config or self.config))
+        env = {**os.environ, 'FLEET_CONFIG': str(cfg_path)}
+        return subprocess.run([sys.executable, str(ROOT / 'scripts/fleetlib.py'), *args],
+                              input=input_text, capture_output=True, text=True, env=env)
+
+    def test_secret_fingerprints_hashes_vault_rotated_and_gateway_keys_without_values(self):
+        import hashlib
+        self.assertEqual(self.run_cli('secret', 'set', 'API_TOKEN', '--scope', 'personal', '--note', 'v1', input_text='first-secret').returncode, 0)
+        self.assertEqual(self.run_cli('secret', 'set', 'API_TOKEN', '--scope', 'personal', '--replace', input_text='second-secret').returncode, 0)
+        result = self.run_cli('secret', 'fingerprints')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertTrue(data['complete'])
+        self.assertEqual(data['missing'], [])
+        by_sha = {f['sha256']: f for f in data['fingerprints']}
+        self.assertIn(hashlib.sha256(b'second-secret').hexdigest(), by_sha)
+        self.assertIn(hashlib.sha256(b'first-secret').hexdigest(), by_sha)
+        self.assertNotIn('first-secret', result.stdout)
+        self.assertNotIn('second-secret', result.stdout)
+        # Missing gateway runtime key marks complete=false and exits 1.
+        cfg = {**self.config, 'gateway': {'url': 'http://127.0.0.1:9', 'runtime_dir': str(self.root / 'missing-gw'), 'expected_email': 'your-email@example.com'}}
+        bad = self.run_cli('secret', 'fingerprints', config=cfg)
+        self.assertEqual(bad.returncode, 1)
+        self.assertFalse(json.loads(bad.stdout)['complete'])
+        self.assertIn('gateway/personal/runtime', json.loads(bad.stdout)['missing'])
+
+    def test_gateway_status_reports_health_without_leaking_keys_or_emails(self):
+        import http.server
+        import time
+        now_epoch = int(time.time())
+        gw_dir = self.root / 'gw'
+        fleet.atomic_write(gw_dir / 'private/client.json', fleet.encode({'api_key': 'gw-client-secret', 'management_key': 'gw-mgmt-secret'}))
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                auth = self.headers.get('Authorization')
+                self.send_response(200 if (
+                    (self.path == '/v1/models' and auth == 'Bearer gw-client-secret')
+                    or (self.path.startswith('/v0/management/') and auth == 'Bearer gw-mgmt-secret')
+                ) else 401)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('X-CPA-VERSION', '8.0.16')
+                self.end_headers()
+                if self.path == '/v1/models' and auth == 'Bearer gw-client-secret':
+                    body = {'data': [{'id': 'm1'}, {'id': 'm2'}]}
+                elif self.path == '/v0/management/config' and auth == 'Bearer gw-mgmt-secret':
+                    body = {'request-retry': 3, 'routing': {'strategy': 'fill-first', 'session-affinity': True, 'session-affinity-ttl': '24h', 'session-affinity-subagents': True}}
+                elif self.path == '/v0/management/auth-files' and auth == 'Bearer gw-mgmt-secret':
+                    body = {'files': [{'provider': 'claude', 'status': 'active', 'email': 'your-email@example.com'}]}
+                elif self.path.startswith('/v0/management/usage-queue') and auth == 'Bearer gw-mgmt-secret':
+                    body = {'items': [{'timestamp': now_epoch, 'status_code': 200}]}
+                else:
+                    body = {}
+                self.wfile.write(json.dumps(body).encode())
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            cfg = {**self.config, 'gateway': {'url': f'http://127.0.0.1:{server.server_port}', 'runtime_dir': str(gw_dir), 'expected_email': 'your-email@example.com'}}
+            result = self.run_cli('gateway-status', '--json', config=cfg)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)['gateways']['personal']
+            self.assertTrue(report['listening'])
+            self.assertEqual(report['version'], '8.0.16')
+            self.assertEqual(report['models'], 2)
+            self.assertTrue(report['unauthenticated_rejected'])
+            self.assertTrue(report['routing']['matches_fleet'])
+            self.assertEqual(report['accounts'][0]['provider'], 'claude')
+            self.assertTrue(report['accounts'][0]['email_matches'])
+            self.assertEqual(report['requests_last_hour']['by_status'], {'200': 1})
+            self.assertEqual(report['errors'], [])
+            for secret in ('gw-client-secret', 'gw-mgmt-secret', 'your-email@example.com'):
+                self.assertNotIn(secret, result.stdout)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -2,7 +2,7 @@
 
 Choose this if you run long builds in T3 Code and have more than one AI account. One thread coordinates, builder accounts write the code, and reviewer accounts check it, all through T3's `delegate_task`. When a builder's usage window closes, new work moves to the next builder and comes back when the window reopens. Skip it if you have one account or do not use T3's delegated tasks.
 
-The module selects the `orchestrate-trifecta` skill, its [README](../../skills/orchestrate-trifecta/README.md) with the sequence diagram of one run, `trifecta.example.json` and the helper's tests. It needs the T3 Code module. A [CLIProxyAPI gateway](proxy.md) is optional: with one, `usage.py` reads each account's usage windows from the rate-limit headers the gateway records; without one, failover goes by limit errors alone.
+The module selects the `orchestrate-trifecta` skill, its [README](../../skills/orchestrate-trifecta/README.md) with the sequence diagram of one run, `trifecta.example.json` and the helper's tests. It needs the T3 Code module. A [CLIProxyAPI gateway](proxy.md) is optional: with one, `usage.py` reads each account's usage windows from the rate-limit headers the gateway records (and can also read native Codex session logs directly for a Codex reviewer); without one, failover goes by limit errors alone. When paired with [paging](paging.md), `usage.py` flags weekly windows at or below `page_at_left_percent` left (default 3%) so the coordinator can send one `fleet page` per window per reset.
 
 1. Add each account to T3 as a provider instance. Note the instance ids, model ids and option names from `orchestrator_capabilities`.
 2. Install the skill folder for the coordinator's Claude home, as in [installing skills](../install-skills.md).

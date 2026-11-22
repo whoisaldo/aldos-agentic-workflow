@@ -73,6 +73,10 @@ Lists profiles with identity, home and whether the home is managed or a preserve
 
 Checks original profile hashes and T3 (when a baseline exists), installed managed profiles, skills against the latest release, the sync worker's last report, and each gateway's reachability, account counts and identity isolation. Prints `PENDING:` lines and exits 1 when something needs attention. It does not call agents.
 
+### `fleet gateway-status [--json]`
+
+Reports each configured gateway's URL, listening state, CLIProxyAPI version, launchd state (on macOS), model count, whether unauthenticated requests are rejected, routing and session-affinity settings, each account's provider/enabled/status/email-match flags, and last-hour request counts by status code (kept in `state_dir/gateway-usage/`). It never prints keys, tokens, email addresses or raw management payloads, refuses HTTP redirects, validates copied fields against fixed lists or types, and emits fixed-phrase errors. Without `--json`, it prints one summary line per gateway.
+
 ## Skill synchronization
 
 ```json
@@ -144,7 +148,7 @@ The notify host tries each channel in order and stops at the first that accepts 
 "secrets": {"host": "devbox1", "scopes": ["personal", "work"]}
 ```
 
-### `fleet secret list|get|set|remove`
+### `fleet secret list|get|set|remove|fingerprints`
 
 ```sh
 fleet secret list [--scope personal]
@@ -152,9 +156,10 @@ printf '%s' 'THE_TOKEN' | fleet secret set DISCORD_EXAMPLE_BOT_TOKEN --scope per
 DISCORD_TOKEN="$(fleet secret get DISCORD_EXAMPLE_BOT_TOKEN --scope personal)" npm run bot
 fleet secret set DISCORD_EXAMPLE_BOT_TOKEN --scope personal --replace < new-token.txt
 fleet secret remove DISCORD_EXAMPLE_BOT_TOKEN --scope personal
+fleet secret fingerprints
 ```
 
-Each key is a mode-600 JSON file at `state_dir/secrets/SCOPE/NAME.json` on the vault host, in a mode-700 folder. Names are environment variable names. Scopes default to the profiles' distinct identities. `set` reads the value from stdin, or prompts without echo in a terminal, and needs `--note` for a new key. It refuses to overwrite a key without `--replace`, and then keeps the old record in `replaced/`. `remove` keeps a copy in `removed/`. Writes to one key take a lock under `secrets/.locks/` (`flock` on macOS and Linux, `msvcrt.locking` on Windows), and a first write publishes with a hard link that fails if the key exists, so simultaneous writers never both save and every replaced value is kept. `list` prints scope, name, date and note, never values. Other machines relay requests over SSH with the request, including any value, on stdin rather than in a command line. The `fleet-secrets` skill tells agents when to use it.
+Each key is a mode-600 JSON file at `state_dir/secrets/SCOPE/NAME.json` on the vault host, in a mode-700 folder. Names are environment variable names. Scopes default to the profiles' distinct identities. `set` reads the value from stdin, or prompts without echo in a terminal, and needs `--note` for a new key. It refuses to overwrite a key without `--replace`, and then keeps the old record in `replaced/`. `remove` keeps a copy in `removed/`. Writes to one key take a lock under `secrets/.locks/` (`flock` on macOS and Linux, `msvcrt.locking` on Windows), and a first write publishes with a hard link that fails if the key exists, so simultaneous writers never both save and every replaced value is kept. `list` prints scope, name, date and note, never values. `fingerprints` prints JSON with `complete`, `missing` and `{name, length, sha256}` for every vault entry (including rotated entries in `replaced/`) and configured gateway key, never values, exiting 1 if any source could not be read so a redactor can refuse a partial list. Other machines relay requests over SSH with the request, including any value, on stdin rather than in a command line. The `fleet-secrets` skill tells agents when to use it.
 
 ## Claude without the gateway
 

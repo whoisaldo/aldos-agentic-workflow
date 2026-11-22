@@ -13,13 +13,21 @@ export const state = (process.env.FLEET_STATE_DIR || configuredState).replace(/^
 const base = 'http://127.0.0.1:3773';
 const read = async p => JSON.parse(await fs.readFile(p, 'utf8'));
 const privateWrite = async (name, value) => fs.writeFile(path.join(state, 'private', name), JSON.stringify(value, null, 2) + '\n', {mode: 0o600});
+// T3 binds a websocket ticket to its use; servers older than that have only the bare path and answer 404.
+export const ticketPaths = ['/api/auth/websocket-ticket/rpc', '/api/auth/websocket-ticket'];
+// Protocol 2 servers answer 426 to a socket that does not name the orchestration protocol; older ones ignore it.
+export const socketUrl = ticket => `${base.replace(/^http/, 'ws')}/ws?wsTicket=${encodeURIComponent(ticket)}&orchestrationProtocol=2`;
 
 export async function connect() {
   const auth = await read(path.join(state, 'private/t3-session.json'));
-  const response = await fetch(base + '/api/auth/websocket-ticket', {method: 'POST', headers: {Authorization: 'Bearer ' + auth.access_token}});
+  let response;
+  for (const ticketPath of ticketPaths) {
+    response = await fetch(base + ticketPath, {method: 'POST', headers: {Authorization: 'Bearer ' + auth.access_token}});
+    if (response.status !== 404) break;
+  }
   if (!response.ok) throw new Error(`T3 ticket failed: ${response.status}`);
   const {ticket} = await response.json();
-  const ws = new WebSocket(`ws://127.0.0.1:3773/ws?wsTicket=${encodeURIComponent(ticket)}`);
+  const ws = new WebSocket(socketUrl(ticket));
   await new Promise((resolve, reject) => {
     ws.addEventListener('open', resolve, {once: true});
     ws.addEventListener('error', reject, {once: true});
@@ -52,10 +60,20 @@ export async function connect() {
   };
 }
 
+// Protocol 2 servers dropped server.getSettings; server.getConfig carries the same settings.
+export async function getSettings(client) {
+  try {
+    return await client.rpc('server.getSettings');
+  } catch (error) {
+    if (!error.message.includes('Unknown request tag')) throw error;
+    return (await client.rpc('server.getConfig')).settings;
+  }
+}
+
 async function main() {
   const client = await connect();
   try {
-    const settings = await client.rpc('server.getSettings');
+    const settings = await getSettings(client);
     if (process.argv[2] === 'set-default') {
       const selected = process.argv[process.argv.indexOf('--profile') + 1];
       const config = await read(path.join(root, 'fleet.json'));
@@ -64,7 +82,7 @@ async function main() {
       const desired = {instanceId: p.t3_instance, model: p.model.replace('[1m]', ''), options: [{id: p.driver === 'codex' ? 'reasoningEffort' : 'effort', value: p.effort}, ...(p.model.includes('[1m]') ? [{id: 'contextWindow', value: '1m'}] : [])]};
       console.log(JSON.stringify({newThreadDefault: desired, apply: process.argv.includes('--apply')}));
       if (!process.argv.includes('--apply') || isDeepStrictEqual(settings.defaultModelSelection, desired)) return;
-      if (!isDeepStrictEqual(await client.rpc('server.getSettings'), settings)) throw new Error('Settings changed during preparation; retry');
+      if (!isDeepStrictEqual(await getSettings(client), settings)) throw new Error('Settings changed during preparation; retry');
       await privateWrite('t3-before-default-' + Date.now() + '.json', settings);
       const result = await client.rpc('server.updateSettings', {patch: {defaultModelSelection: desired}});
       if (!isDeepStrictEqual(result.providerInstances, settings.providerInstances)) throw new Error('Provider identities changed unexpectedly; inspect before continuing');
@@ -126,7 +144,7 @@ async function main() {
     }
     console.log(JSON.stringify({newProviders: additions, newUsageSources: Object.keys(sources).filter(k => !settings.usageLimitSources?.[k]), apply: process.argv.includes('--apply')}));
     if (!process.argv.includes('--apply')) return;
-    const fresh = await client.rpc('server.getSettings');
+    const fresh = await getSettings(client);
     if (!isDeepStrictEqual(fresh, settings)) throw new Error('T3 settings changed during preparation; retry from a fresh read');
     await privateWrite('t3-before-additions.json', settings);
     const result = await client.rpc('server.updateSettings', {patch: {providerInstances: instances, usageLimitSources: sources}});

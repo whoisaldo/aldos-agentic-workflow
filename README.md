@@ -71,7 +71,7 @@ The [trifecta README](skills/orchestrate-trifecta/README.md) explains the roles 
 
 ### Gateways and usage-aware failover
 
-Each builder has a `switch_at_percent`. Before each wave of builds the coordinator reads every usage window the gateways report for each role. A builder at its threshold gets nothing large, and a builder that fails with a usage-limit error hands its work to the next builder in order. `usage.py --sleep-until-reset builder1` then runs in the background and wakes the thread when the window reopens. Validating the example config makes no network request:
+Each builder has a `switch_at_percent`. Before each wave of builds the coordinator reads every usage window the gateways (and, for a native Codex reviewer, Codex's session logs) report for each role. A builder at its threshold gets nothing large, and a builder that fails with a usage-limit error hands its work to the next builder in order. `usage.py --sleep-until-reset builder1` then runs in the background (marked with `t3_background_wait`) and wakes the thread when the window reopens. When a configured weekly window drops to `page_at_left_percent` left (default 3%), `usage.py` prints a `PAGE:` line so the coordinator can send one `fleet page` for that reset. Validating the example config makes no network request:
 
 ```console
 $ TRIFECTA_CONFIG=skills/orchestrate-trifecta/trifecta.example.json \
@@ -79,23 +79,24 @@ $ TRIFECTA_CONFIG=skills/orchestrate-trifecta/trifecta.example.json \
 config: skills/orchestrate-trifecta/trifecta.example.json
 
 ROLE         LABEL                            PROVIDER INSTANCE          MODEL              OPTIONS                    USAGE                RULE
-coordinator  Coordinator account              claudeAgent_coordinator    -                  {}                         coordinator-claude   coordinates; the thread you are in
-builder1     Builder seat                     claudeAgent_builder        claude-opus-5-5    {"effort": "high"}         builder-claude       switch at 85%
+coordinator  Coordinator account              claudeAgent_coordinator    -                  {}                         coordinator-claude   coordinates; the thread you are in; page on weekly, fable_weekly
+builder1     Builder seat                     claudeAgent_builder        claude-opus-5-5    {"effort": "high"}         builder-claude       switch at 85%; page on fable_weekly
 builder2     Coordinator account (fallback)   claudeAgent_coordinator    claude-opus-5-5    {"effort": "high"}         coordinator-claude   switch at 85%
-reviewer1    GPT reviewer                     codex                      gpt-6.1-sol        {"reasoningEffort": "high"} reviewer-codex       weight 7 (70% of reviews)
+reviewer1    GPT reviewer                     codex                      gpt-6.2-sol        {"reasoningEffort": "high"} reviewer-codex       weight 7 (70% of reviews); page on weekly
 reviewer2    Claude reviewer                  claudeAgent_builder        claude-opus-5-5    {"effort": "high"}         builder-claude       weight 3 (30% of reviews)
 
 max_parallel_builders: 2
 stale_minutes: 20
+page_at_left_percent: 3
 never_use: claudeAgent_direct, codex_old_seat
 
 usage sources:
   coordinator-claude: cliproxyapi http://127.0.0.1:8317 provider=claude unit=fraction key_file=~/.config/trifecta/main-gateway.json  (key file not found yet)
   builder-claude: cliproxyapi http://127.0.0.1:8318 provider=claude unit=fraction key_file=~/.config/trifecta/builder-gateway.json  (key file not found yet)
-  reviewer-codex: cliproxyapi http://127.0.0.1:8317 provider=codex unit=percent key_file=~/.config/trifecta/main-gateway.json  (key file not found yet)
+  reviewer-codex: cliproxyapi http://127.0.0.1:8317 provider=codex unit=percent key_file=~/.config/trifecta/main-gateway.json codex_sessions=~/.codex/sessions  (key file not found yet)
 ```
 
-The gateway setup is in the [proxy module](docs/modules/proxy.md).
+`fleet gateway-status --json` reports each configured gateway's health, routing and session-affinity checks, account statuses and last-hour request counts without exposing keys, tokens or emails. The gateway setup is in the [proxy module](docs/modules/proxy.md).
 
 ### `fleet page`: a last resort that reaches your phone
 
@@ -123,7 +124,7 @@ Channels: `discord-webhook`, `slack-webhook`, `ntfy`, `openclaw` and `command`, 
 
 ### `fleet secret`: keys go in the vault as soon as they exist
 
-When an agent creates a bot token or API key, it saves it right away, and it checks the vault before asking you for one. Values go in on stdin and come out inside `$(...)`, so they never land in a command line or a transcript.
+When an agent creates a bot token or API key, it saves it right away, and it checks the vault before asking you for one. Values go in on stdin and come out inside `$(...)`, so they never land in a command line or a transcript. `fleet secret fingerprints` exports only names, lengths and SHA-256 hashes (including rotated entries and gateway keys) so an output redactor can scrub secrets without holding them.
 
 ```console
 $ printf '%s' "$TOKEN" | fleet secret set DISCORD_EXAMPLE_BOT_TOKEN --scope personal \

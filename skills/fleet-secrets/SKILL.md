@@ -12,7 +12,7 @@ fleet secret list
 fleet secret list --scope personal
 ```
 
-`list` shows scope, name, date and note. It never shows values.
+`list` shows scope, name, date and note. It never shows values. `fleet secret fingerprints` prints JSON with the name, length and SHA-256 of every vault entry (including rotated ones in `replaced/`) and configured gateway key, never values, so an output redactor can scrub secrets without holding them.
 
 Every key belongs to one scope. The scopes are `secrets.scopes` in `fleet.json`, or the profiles' identities when that is not set; `personal` and `work` are typical. Choose the scope of the account or project that owns the key, which may differ from the account you are running on. Never copy a key into another scope, and keep employer keys out of personal projects.
 

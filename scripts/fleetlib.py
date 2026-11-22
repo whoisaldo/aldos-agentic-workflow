@@ -9,6 +9,7 @@ import difflib
 import errno
 import getpass
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,7 @@ import sys
 import tempfile
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 
 if os.name == "nt":
@@ -386,8 +388,8 @@ def deploy_profile(config, name, revision, apply=False):
     return len(changes) + len(links)
 
 
-def http_json(url, key=None, method="GET", data=None, timeout=15):
-    headers = {"Accept": "application/json"}
+def http_json(url, key=None, method="GET", data=None, timeout=15, headers=None):
+    headers = {"Accept": "application/json", **(headers or {})}
     if key:
         headers["Authorization"] = "Bearer " + key
     payload = None if data is None else json.dumps(data).encode()
@@ -396,6 +398,28 @@ def http_json(url, key=None, method="GET", data=None, timeout=15):
     request = urllib.request.Request(url, data=payload, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+T3_URL = "http://127.0.0.1:3773"
+
+
+def t3_get(path, key, timeout=15):
+    # Protocol 2 servers answer 400 to an orchestration read without this header; older ones ignore it.
+    return http_json(T3_URL + path, key, timeout=timeout, headers={"x-t3-orchestration-protocol": "2"})
+
+
+def t3_protocol():
+    """The orchestration protocol the local T3 server speaks. Servers before protocol 2 do not say."""
+    try:
+        return http_json(T3_URL + "/.well-known/t3/environment").get("orchestrationProtocolVersion", 1)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return 1
+        raise
+
+
+GATEWAY_ROUTING = {"strategy": "fill-first", "session-affinity": True, "session-affinity-ttl": "24h", "session-affinity-subagents": True}
+GATEWAY_RETRY = 3
 
 
 def t3_ssh_owned(t3_home):
@@ -541,6 +565,290 @@ def doctor(config, selected=None):
     for failure in failures:
         print("PENDING:", failure)
     return 1 if failures else 0
+
+
+USAGE_WINDOW = 3600
+USAGE_SKEW = 300
+USAGE_BATCH = 1000
+# 2000-01-01 to 2100-01-01 UTC. NaN, infinities and overflowing numbers all fail this range.
+EPOCH_MIN, EPOCH_MAX = 946684800, 4102444800
+TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?")
+VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")
+DURATION = re.compile(r"0|([0-9]{1,6}(\.[0-9]{1,6})?(ns|us|µs|ms|s|m|h)){1,4}")
+STATUS_CODE = re.compile(r"[1-5][0-9]{2}|failed|ok")
+# Every field the report copies from a gateway is one of these values or a type checked below; anything else is null.
+PROVIDERS = ("claude", "codex", "gemini", "gemini-cli", "vertex", "aistudio", "qwen", "iflow", "antigravity", "kimi", "openai-compatibility")
+ACCOUNT_STATUSES = ("active", "pending", "refreshing", "error", "disabled", "unknown")
+ROUTING_STRATEGIES = ("fill-first", "round-robin")
+LAUNCHD_STATES = ("running", "not running", "waiting", "spawn scheduled", "exited")
+
+
+class GatewayError(Exception):
+    """A gateway-status failure whose message is one of the fleet's fixed phrases, so it is safe to print.
+    Any other exception's text can quote what a gateway sent, such as a redirect's address, and is never printed."""
+
+
+class NoRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is answered by its 3xx status. urllib would send the Authorization header on to any host,
+    and it parses the new address before checking it, so a malformed one raises with the address in its message."""
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        return None
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+
+GATEWAY_OPENER = urllib.request.build_opener(NoRedirects)
+
+
+def http_get(url, key=None, timeout=10):
+    """Status, headers and decoded JSON body; an HTTP error status, a redirect included, is an answer, not a failure."""
+    request = urllib.request.Request(url, headers={"Accept": "application/json", **({"Authorization": "Bearer " + key} if key else {})})
+    try:
+        with GATEWAY_OPENER.open(request, timeout=timeout) as response:
+            status, headers, raw = response.status, response.headers, response.read()
+    except urllib.error.HTTPError as error:
+        status, headers, raw = error.code, error.headers, b""
+        error.close()
+    try:
+        return status, headers, json.loads(raw) if raw else None
+    except ValueError:
+        return status, headers, None
+
+
+def one_of(value, allowed):
+    return value if isinstance(value, str) and value in allowed else None
+
+
+def flag(value):
+    return value if isinstance(value, bool) else None
+
+
+def bounded(value, low, high):
+    return value if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high else None
+
+
+def matching(value, pattern):
+    return value if isinstance(value, str) and pattern.fullmatch(value) else None
+
+
+def plausible(seconds):
+    return isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and EPOCH_MIN <= seconds <= EPOCH_MAX
+
+
+def epoch(value):
+    """Seconds since 1970 for a time between 2000 and 2100, or None."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = value / 1000 if 1e12 < value <= EPOCH_MAX * 1000 else value
+    elif isinstance(value, str) and TIMESTAMP.fullmatch(value):
+        try:
+            seconds = dt.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", value).replace("Z", "+00:00")).timestamp()
+        except (ValueError, OverflowError, OSError):
+            return None
+    else:
+        return None
+    return float(seconds) if plausible(seconds) else None
+
+
+def iso(seconds):
+    return None if seconds is None else dt.datetime.fromtimestamp(seconds, dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def launchd_state(label):
+    launchctl = shutil.which("launchctl")
+    if not launchctl:
+        return {"label": label, "state": None, "last_exit": None}
+    try:
+        result = subprocess.run([launchctl, "print", f"gui/{os.getuid()}/{label}"], capture_output=True, text=True, timeout=10)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return {"label": label, "state": None, "last_exit": None}
+    if result.returncode:
+        return {"label": label, "state": "not loaded", "last_exit": None}
+    lines, depth = {}, 0
+    for line in result.stdout.splitlines()[1:]:
+        if depth == 0 and line.startswith("\t") and not line.startswith("\t\t") and " = " in line:
+            key, value = line[1:].split(" = ", 1)
+            lines[key] = None if key in lines else value
+        depth += line.endswith("{") - (line.strip() == "}")
+    code = re.fullmatch(r"(-?[0-9]{1,3})(:.*)?", lines.get("last exit code") or "")
+    if lines.get("last exit code") == "(never exited)":
+        last_exit = "(never exited)"
+    else:
+        last_exit = code.group(1) if code and bounded(int(code.group(1)), -255, 255) is not None else None
+    return {"label": label, "state": one_of(lines.get("state"), LAUNCHD_STATES), "last_exit": last_exit}
+
+
+def gateway_account(entry, expected_email):
+    email = entry.get("email")
+    return {"provider": one_of(entry.get("provider", entry.get("type")), PROVIDERS) or "unknown",
+            "enabled": not entry.get("disabled", False),
+            "email_matches": None if not expected_email else isinstance(email, str) and email.lower() == expected_email.lower(),
+            "status": one_of(entry.get("status"), ACCOUNT_STATUSES),
+            "unavailable": bool(entry.get("unavailable", False)),
+            **{field: iso(epoch(entry.get(field))) for field in ["last_refresh", "next_refresh_after", "next_retry_after"]}}
+
+
+def gateway_routing(active):
+    routing = active.get("routing") if isinstance(active.get("routing"), dict) else {}
+    retry = routing.get("retry") if isinstance(routing.get("retry"), dict) else {}
+    report = {"strategy": one_of(routing.get("strategy"), ROUTING_STRATEGIES),
+              "session_affinity": flag(routing.get("session-affinity")),
+              "session_affinity_ttl": matching(routing.get("session-affinity-ttl"), DURATION),
+              "session_affinity_subagents": flag(routing.get("session-affinity-subagents")),
+              "request_retry": bounded(active.get("request-retry", retry.get("request-retry")), 0, 100)}
+    report["matches_fleet"] = all(report[k.replace("-", "_")] == v for k, v in GATEWAY_ROUTING.items()) and report["request_retry"] == GATEWAY_RETRY
+    return report
+
+
+def usage_status(record):
+    fail = record.get("fail") if isinstance(record.get("fail"), dict) else {}
+    for code in [record.get("status_code"), fail.get("status_code"), record.get("http_status")]:
+        if bounded(code, 100, 599) is not None:
+            return str(code)
+    return "failed" if record.get("failed") else "ok"
+
+
+def usage_state(path, now):
+    """What the last poll kept, checked before anything is drained; a file this command did not write is an error."""
+    if not path.exists():
+        return now, []
+    try:
+        held = read_json(path)
+    except (OSError, ValueError):
+        held = None
+    valid = (isinstance(held, dict) and plausible(held.get("since")) and plausible(held.get("polled")) and isinstance(held.get("requests"), list)
+             and all(isinstance(r, list) and len(r) == 2 and plausible(r[0]) and matching(r[1], STATUS_CODE) for r in held["requests"]))
+    if not valid:
+        raise GatewayError("usage state is unreadable; nothing was drained")
+    since = held["since"] if now - held["polled"] < USAGE_WINDOW else now
+    return since, [r for r in held["requests"] if r[0] >= now - USAGE_WINDOW]
+
+
+def gateway_requests(config, name, url, key, now):
+    """CLIProxyAPI 8.0.16 serves usage from a draining queue, so fleet keeps the last hour's status
+    codes, and nothing else, in its own state under state_dir/gateway-usage/."""
+    path = state_dir(config) / "gateway-usage" / (name + ".json")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    dropped = 0
+    with file_lock(path.with_suffix(".lock")):
+        since, kept = usage_state(path, now)
+        for _ in range(10):
+            status, _, body = http_get(f"{url}/v0/management/usage-queue?count={USAGE_BATCH}", key)
+            if status != 200:
+                raise GatewayError(f"usage queue answered HTTP {status}")
+            batch = body if isinstance(body, list) else next((body[k] for k in ["items", "records", "usage", "data"] if isinstance(body, dict) and isinstance(body.get(k), list)), None)
+            if batch is None:
+                raise GatewayError("usage queue answered in a shape this version does not know")
+            for record in batch:
+                seconds = epoch(record.get("timestamp")) if isinstance(record, dict) else None
+                if seconds is not None and now - USAGE_WINDOW <= seconds <= now + USAGE_SKEW:
+                    kept.append([seconds, usage_status(record)])
+                else:
+                    dropped += 1
+            atomic_write(path, encode({"since": since, "polled": now, "requests": kept}))
+            if len(batch) < USAGE_BATCH:
+                break
+    counts = {}
+    for _, code in kept:
+        counts[code] = counts.get(code, 0) + 1
+    return {"by_status": dict(sorted(counts.items())), "collected_since": iso(max(since, now - USAGE_WINDOW))}, dropped
+
+
+def configured_gateways(config):
+    return {**({"personal": config["gateway"]} if config.get("gateway") else {}), **config.get("additional_gateways", {})}
+
+
+def blank_status(gateway):
+    return {"url": gateway["url"], "listening": None, "version": None, "launchd": None, "models": None,
+            "unauthenticated_rejected": None, "management_key_source": None, "routing": None, "accounts": None, "requests_last_hour": None, "errors": []}
+
+
+def gateway_key_sources(config, name):
+    """Each readable copy of a gateway's keys: the client cache first, then the runtime file on the gateway host."""
+    sources = []
+    for source, path in [("cache", state_dir(config) / "gateway-keys" / (name + ".json")),
+                         ("runtime", expand(gateway_config(config, name)["runtime_dir"]) / "private/client.json")]:
+        try:
+            keys = read_json(path)
+        except (OSError, ValueError):
+            continue
+        if isinstance(keys, dict):
+            sources.append((source, keys))
+    return sources
+
+
+def gateway_status(config, name, gateway, now):
+    """One gateway's health from the outside and from its management API, without keys, tokens or emails.
+    Errors are fixed phrases and HTTP status numbers, never an exception's text."""
+    report = {**blank_status(gateway), "listening": False,
+              "launchd": launchd_state(gateway["service_label"]) if gateway.get("service_label") else None}
+    address = urllib.parse.urlsplit(gateway["url"])
+    try:
+        socket.create_connection((address.hostname, address.port or 80), timeout=3).close()
+        report["listening"] = True
+    except OSError:
+        report["errors"].append("not listening")
+        return report
+    sources = gateway_key_sources(config, name)
+    client = next((k["api_key"] for _, k in sources if isinstance(k.get("api_key"), str) and k["api_key"]), None)
+    candidates = {}
+    for source, keys in sources:
+        if isinstance(keys.get("management_key"), str) and keys["management_key"]:
+            candidates.setdefault(keys["management_key"], source)
+    if not client:
+        report["errors"].append("no client key on this machine")
+    try:
+        if client:
+            status, headers, body = http_get(gateway["url"] + "/v1/models", client)
+            report["version"] = matching(headers.get("X-CPA-VERSION"), VERSION)
+            if status == 200 and isinstance(body, dict) and isinstance(body.get("data"), list):
+                report["models"] = len(body["data"])
+            else:
+                report["errors"].append(f"models answered HTTP {status}")
+        status, _, _ = http_get(gateway["url"] + "/v1/models")
+        report["unauthenticated_rejected"] = status in (401, 403)
+        if status not in (200, 401, 403):
+            report["errors"].append(f"unauthenticated request answered HTTP {status}")
+        if not candidates:
+            report["errors"].append("no management key on this machine")
+            return report
+        for management, source in candidates.items():
+            status, headers, active = http_get(gateway["url"] + "/v0/management/config", management)
+            if status not in (401, 403):
+                report["management_key_source"] = source
+                break
+        report["version"] = matching(headers.get("X-CPA-VERSION"), VERSION) or report["version"]
+        if status == 200 and isinstance(active, dict):
+            report["routing"] = gateway_routing(active)
+        else:
+            report["errors"].append(f"management config answered HTTP {status}")
+        status, _, auth = http_get(gateway["url"] + "/v0/management/auth-files", management)
+        if status == 200 and isinstance(auth, dict) and isinstance(auth.get("files"), list):
+            report["accounts"] = [gateway_account(e, gateway.get("expected_email")) for e in auth["files"] if isinstance(e, dict)]
+        else:
+            report["errors"].append(f"auth files answered HTTP {status}")
+        try:
+            report["requests_last_hour"], dropped = gateway_requests(config, name, gateway["url"], management, now)
+            if dropped:
+                report["errors"].append(f"usage records dropped for a missing or implausible time: {dropped}")
+        except GatewayError as error:
+            report["errors"].append(str(error))
+    except (OSError, http.client.HTTPException):
+        report["errors"].append("unreachable")
+    except ValueError:
+        report["errors"].append("unexpected answer")
+    return report
+
+
+def gateways_status(config):
+    now = dt.datetime.now(dt.timezone.utc).timestamp()
+    report = {}
+    for name, gateway in configured_gateways(config).items():
+        try:
+            report[name] = gateway_status(config, name, gateway, now)
+        except Exception:
+            report[name] = {**blank_status(gateway), "errors": ["status check failed"]}
+    return {"checked_at": iso(now), "gateways": report}
 
 
 def make_task(config, repo, slug, selected, done):
@@ -798,12 +1106,84 @@ def secret_path(config, scope, name):
     return state_dir(config) / "secrets" / scope / (name + ".json")
 
 
+def secret_fingerprint(name, value):
+    return {"name": name, "length": len(value), "sha256": hashlib.sha256(value.encode()).hexdigest()}
+
+
+def vault_records(root, missing):
+    """Each vault record, then each rotated one in replaced/, as (name, path). A glob skips a folder it cannot
+    read without a word; this walk names that folder in `missing` instead."""
+    def listing(path, name):
+        try:
+            with os.scandir(path) as entries:
+                return sorted((e.name, e.is_dir(), Path(e.path)) for e in entries)
+        except FileNotFoundError:
+            return []
+        except OSError:
+            missing.append(name)
+            return []
+    records, rotated = [], []
+    for scope, is_dir, folder in listing(root, "vault"):
+        if not is_dir or scope.startswith("."):
+            continue
+        for entry, entry_is_dir, path in listing(folder, f"vault/{scope}"):
+            if entry_is_dir and entry == "replaced":
+                rotated += [(f"vault/{scope}/replaced/{old[:-5]}", p) for old, d, p in listing(path, f"vault/{scope}/replaced") if not d and old.endswith(".json")]
+            elif not entry_is_dir and entry.endswith(".json"):
+                records.append((f"vault/{scope}/{entry[:-5]}", path))
+    return records + rotated
+
+
+def secret_fingerprints(config):
+    """Every vault value, rotated ones included, and every configured gateway key on the vault host, by
+    length and SHA-256, so a redactor can scrub them from output without holding them. A source that
+    cannot be read is named in `missing` and makes `complete` false."""
+    root = state_dir(config) / "secrets"
+    prints, missing = [], []
+    for name, path in vault_records(root, missing):
+        try:
+            value = read_json(path).get("value")
+        except (OSError, ValueError, AttributeError):
+            value = None
+        if isinstance(value, str):
+            prints.append(secret_fingerprint(name, value))
+        else:
+            missing.append(name)
+    seen = set()
+    for name in configured_gateways(config):
+        for source, prefix, path, required in [("runtime", "", expand(gateway_config(config, name)["runtime_dir"]) / "private/client.json", True),
+                                               ("cache", "cache/", state_dir(config) / "gateway-keys" / (name + ".json"), False)]:
+            try:
+                keys = read_json(path)
+            except FileNotFoundError:
+                if not required:
+                    continue
+                keys = None
+            except (OSError, ValueError):
+                keys = None
+            if not isinstance(keys, dict):
+                missing.append(f"gateway/{name}/{source}")
+                continue
+            for field in ["api_key", "management_key"]:
+                value = keys.get(field)
+                if isinstance(value, str) and value:
+                    entry = secret_fingerprint(f"gateway/{name}/{prefix}{field}", value)
+                    if entry["sha256"] not in seen:
+                        seen.add(entry["sha256"])
+                        prints.append(entry)
+                elif required or field in keys:
+                    missing.append(f"gateway/{name}/{source}/{field}")
+    return {"complete": not missing, "missing": missing, "fingerprints": prints}
+
+
 def secret_local(config, request):
-    """Read or write the vault on this machine. Listings never include values."""
+    """Read or write the vault on this machine. Listings and fingerprints never include values."""
     root = state_dir(config) / "secrets"
     if request["action"] == "list":
         records = [read_json(path) for path in sorted(root.glob("*/*.json")) if request.get("scope") in (None, path.parent.name)]
         return {"secrets": [{k: v for k, v in record.items() if k != "value"} for record in records]}
+    if request["action"] == "fingerprints":
+        return secret_fingerprints(config)
     scope, name = request["scope"], request["name"]
     path = secret_path(config, scope, name)
     missing = f"No {scope} secret named {name}. Run `fleet secret list` to see what is stored."
@@ -994,8 +1374,10 @@ def main():
     command.add_argument("text", nargs="?", help="A few sentences: what is blocked and the action the owner must take")
     command.add_argument("--dry-run", action="store_true", help="Show each channel and payload without sending or using the page limit")
     command.add_argument("--relay", action="store_true", help=argparse.SUPPRESS)
+    command = sub.add_parser("gateway-status", help="Each gateway's health, accounts and last hour of requests, without keys, tokens or emails")
+    command.add_argument("--json", action="store_true", help="Print the full report as JSON")
     command = sub.add_parser("secret", help="Store and fetch API keys and tokens in the fleet vault, outside Git")
-    command.add_argument("action", nargs="?", choices=["list", "get", "set", "remove"])
+    command.add_argument("action", nargs="?", choices=["list", "get", "set", "remove", "fingerprints"])
     command.add_argument("name", nargs="?", help="Environment variable name, such as DISCORD_EXAMPLE_BOT_TOKEN")
     command.add_argument("--scope", help="Identity the key belongs to (fleet.json secrets.scopes, or the profile identities)")
     command.add_argument("--note", help="For set: what the key is for and which account or app issued it")
@@ -1060,6 +1442,18 @@ def main():
         if not re.fullmatch(r"[0-9a-f]{20}", revision):
             raise ValueError("Invalid release id")
         deploy_profile(config, args.profile, state_dir(config) / "releases" / revision, apply=args.command == "apply")
+    elif args.command == "gateway-status":
+        report = gateways_status(config)
+        if args.json:
+            print(encode(report), end="")
+        elif not report["gateways"]:
+            print("No gateways configured in fleet.json.")
+        else:
+            for name, g in report["gateways"].items():
+                accounts = ", ".join(f"{a['provider']} {a['status'] or 'unknown'}" for a in g["accounts"] or []) or "accounts unknown"
+                requests = ", ".join(f"{n}×{code}" for code, n in ((g["requests_last_hour"] or {}).get("by_status") or {}).items()) or "no requests counted"
+                listening = {True: "listening", False: "down"}.get(g["listening"], "state unknown")
+                print(f"{name}: {listening}; {accounts}; last hour {requests}" + "".join(f"; {e}" for e in g["errors"]))
     elif args.command == "task":
         make_task(config, args.repo, args.slug, args.profile, args.done)
     elif args.command == "page":
@@ -1070,8 +1464,8 @@ def main():
         if args.relay:
             print(encode(secret_local(config, json.loads(sys.stdin.read()))), end="")
             return 0
-        if not args.action or (args.action != "list" and not (args.name and args.scope)):
-            raise ValueError("Use `fleet secret list`, or get/set/remove with a NAME and --scope")
+        if not args.action or (args.action not in {"list", "fingerprints"} and not (args.name and args.scope)):
+            raise ValueError("Use `fleet secret list` or `fleet secret fingerprints`, or get/set/remove with a NAME and --scope")
         request = {"action": args.action, "scope": args.scope, "name": args.name}
         if args.action == "set":
             value = getpass.getpass(f"{args.name}: ") if sys.stdin.isatty() else sys.stdin.read()
@@ -1081,6 +1475,11 @@ def main():
             print(reply["value"])
         elif args.action in ("set", "remove"):
             print(reply["saved"])
+        elif args.action == "fingerprints":
+            print(encode(reply), end="")
+            if reply.get("complete") is not True:
+                print("fleet: the fingerprint list is incomplete; missing: " + ", ".join(map(str, reply.get("missing") or ["unknown"])), file=sys.stderr)
+                return 1
         elif not reply["secrets"]:
             print("The vault has no secrets" + (f" in the {args.scope} scope." if args.scope else "."))
         else:

@@ -11,17 +11,46 @@ from pathlib import Path
 import shutil
 
 from fleetlib import (allow_windows_user, atomic_write, encode, expand,
-                      http_json, install_skill_link, link_matches, load_config, profile, read_json,
-                      skill_allowed, state_dir, tree_hash, verify_release)
+                      install_skill_link, link_matches, load_config, profile, read_json,
+                      skill_allowed, state_dir, t3_get, tree_hash, verify_release)
+
+# T3's own rule for a live protocol 2 shell thread also counts these statuses.
+LIVE_T3_STATUSES = {"queued", "preparing", "starting", "running", "waiting"}
+# Statuses a protocol 2 thread has when nothing runs. Any status outside both sets counts as live.
+SETTLED_T3_STATUSES = {"completed", "idle", "failed", "interrupted", "cancelled"}
+
+
+def t3_thread_live(t):
+    """A turn that is running or waiting, in a protocol 1 or protocol 2 shell."""
+    return bool((t.get("session") or {}).get("activeTurnId")
+                or (t.get("latestTurn") or {}).get("state") == "running"
+                or t.get("activeRunId") or t.get("activityRunStatus")
+                or t.get("status") in LIVE_T3_STATUSES
+                or ("status" in t and t["status"] not in SETTLED_T3_STATUSES)
+                or t.get("pendingRuntimeRequest") or t.get("pendingBackgroundTasks"))
+
+
+def shell_threads(shell):
+    """Every thread a shell snapshot lists, archived ones included. A snapshot or thread this
+    check cannot read refuses, so an unexpected server answer never counts as idle.
+
+    A protocol 2 server's HTTP shell leaves archived threads out, and T3 lets a running thread be
+    archived while its provider detaches. Do not archive a running thread during an idle window."""
+    threads = shell.get("threads") if isinstance(shell, dict) else None
+    archived = shell.get("archivedThreads", []) if isinstance(shell, dict) else None
+    if not isinstance(threads, list) or not isinstance(archived, list):
+        raise ValueError("T3's shell snapshot has an unexpected shape; preserved all profiles")
+    for t in threads + archived:
+        if not isinstance(t, dict) or not isinstance(t.get("id"), str) or not t["id"] \
+                or not any(k in t for k in ("status", "session", "latestTurn")):
+            raise ValueError("T3's shell lists a thread this check cannot read; preserved all profiles")
+    return threads + archived
 
 
 def assert_idle(state, allowed=()):
     auth = read_json(state / "private/t3-session.json")
-    shell = http_json("http://127.0.0.1:3773/api/orchestration/shell", auth["access_token"])
-    active = [t["id"] for t in shell["threads"]
-              if ((t.get("session") or {}).get("activeTurnId")
-                  or (t.get("latestTurn") or {}).get("state") == "running")
-              and t["id"] not in allowed]
+    shell = t3_get("/api/orchestration/shell", auth["access_token"])
+    active = [t["id"] for t in shell_threads(shell) if t3_thread_live(t) and t["id"] not in allowed]
     if active:
         raise ValueError("Other T3 turns are active; preserved all profiles: " + ", ".join(active))
 

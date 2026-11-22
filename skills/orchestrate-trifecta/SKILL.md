@@ -34,6 +34,7 @@ From the table, note for the whole run:
 | `max_parallel_builders` | Builders at once (default 2) | 2 |
 | `never_use` | Provider instance ids never to start anything on | direct logins kept for manual checks |
 | `stale_minutes` | Age after which a reading is STALE (default 20) | 20 |
+| `page_at_left_percent` | Weekly-window remaining % at or below which `USAGE` prints a `PAGE:` line (default 3) | 3 |
 
 Role ids are `coordinator`, `builder1`, `builder2`, ..., `reviewer1`, ....
 Everywhere below, "the primary builder" is `builder1`, "the fallback" is the
@@ -133,9 +134,25 @@ reads them.
   fall back to an instance in `never_use`.
 
 A reading older than `stale_minutes` is marked STALE. A builder's reading
-refreshes whenever a builder runs on it. To refresh another role, send a
-one-line `delegate_task` to its provider instance; do this only when the
+refreshes whenever a builder runs on it, and a native Codex reviewer's
+reading refreshes whenever a review runs when `codex_sessions` is configured
+(it is read from native Codex's session logs). To refresh another role, send
+a one-line `delegate_task` to its provider instance; do this only when the
 number changes a decision.
+
+## Paging the owner about weekly limits
+
+A weekly allowance running out is the one quota event the owner may want a
+page for, when `fleet page` and `page_windows` are configured.
+
+- When `USAGE` prints a `PAGE:` line (a configured weekly window at
+  `page_at_left_percent` left or less, default 3%), run `fleet page` once
+  with the account, the window, what is left and when it resets. Then carry
+  on under the rules above.
+- Only weekly windows page (`weekly` and `fable_weekly`, as configured per
+  role in `page_windows`). Five-hour windows never page.
+- One page per window per reset: record each page in the progress file and
+  do not repeat it. A refused or failed page goes in your report.
 
 ## Reviews
 

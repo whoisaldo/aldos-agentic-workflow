@@ -16,4 +16,4 @@ The dry run prints each channel's request with references in place of values, re
 
 A page has at most `max_sentences` sentences (default 3) and `max_chars` characters (default 500). Each agent session can page once per `interval_minutes`. Channels are tried in order until one accepts. Other machines relay the page to the notify host over SSH. Every attempt is logged under `state_dir/pages/`, and a failed channel is logged with only a status or error class, never the message or a resolved URL.
 
-Tell your agents when a page is allowed. This repository's [AGENTS.md](../../AGENTS.md) has a rule you can copy. The [fleet CLI reference](../fleet-cli.md#paging-the-owner) lists every channel type and setting.
+Tell your agents when a page is allowed. This repository's [AGENTS.md](../../AGENTS.md) has a rule you can copy, and [orchestrate-trifecta](trifecta.md) can also page once per reset when a configured weekly usage window drops to 3% left. The [fleet CLI reference](../fleet-cli.md#paging-the-owner) lists every channel type and setting.

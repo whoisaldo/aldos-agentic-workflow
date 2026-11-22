@@ -45,7 +45,7 @@ is right**:
 
 - **Generating a picture** (hero, illustration, mockup) - `codex-image`.
 - **Building an object** (three.js module, animatable SVG) - use `codex-3d`
-  for Claude and GPT-6.1 Sol to collaborate at max reasoning.
+  for Claude and GPT-6.2 Sol to collaborate at max reasoning.
 - **Writing tests** (unit, Playwright, Cypress files) - write code; Astra's
   report is evidence for you, not a test suite.
 - **Reviewing source without running it** - read it yourself or use

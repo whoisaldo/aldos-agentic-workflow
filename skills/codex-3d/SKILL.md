@@ -1,6 +1,6 @@
 ---
 name: codex-3d
-description: Collaboratively build and refine 3D geometry and animatable vector objects with Claude and GPT-6.1 Sol through Codex, exclusively at max reasoning. Use for three.js/WebGL objects, GLB/glTF or Blender models, procedural assets, or SVG objects with independently animated parts. Claude develops the brief, reviews the geometry and renders, and integrates the result; Sol reasons through modeling choices and implements or revises the asset. Static pictures belong to codex-image. Excludes UI layout, charts, icon sets, and app screenshots.
+description: Collaboratively build and refine 3D geometry and animatable vector objects with Claude and GPT-6.2 Sol through Codex, exclusively at max reasoning. Use for three.js/WebGL objects, GLB/glTF or Blender models, procedural assets, or SVG objects with independently animated parts. Claude develops the brief, reviews the geometry and renders, and integrates the result; Sol reasons through modeling choices and implements or revises the asset. Static pictures belong to codex-image. Excludes UI layout, charts, icon sets, and app screenshots.
 ---
 
 Fleet execution: use a configured macOS/POSIX host with the user's native personal Codex account. These bridges are for personal work. Employer work must use its approved environment and must not cross into a personal account. Dependencies live outside the immutable release in `~/.cache/agent-skills`, overridable with `AGENT_SKILL_CACHE_DIR`. From Windows, use an explicitly configured Mac worker and copy the artifacts back.
@@ -8,20 +8,20 @@ Fleet execution: use a configured macOS/POSIX host with the user's native person
 
 # Collaborative 3D modeling
 
-Claude and GPT-6.1 Sol share the modeling work. Claude brings the project's
+Claude and GPT-6.2 Sol share the modeling work. Claude brings the project's
 context, visual direction and integration constraints. Sol checks the proposed
 approach, builds or revises the geometry, and explains consequential decisions.
 Claude independently inspects the result and contributes edits or focused
 feedback. Either can spot a better approach; evaluate it against the brief and
 the renders.
 
-Every Codex call uses `gpt-6.1-sol` with `model_reasoning_effort="max"`, including
+Every Codex call uses `gpt-6.2-sol` with `model_reasoning_effort="max"`, including
 revisions and optional self-review. The wrapper rejects other model and effort
 values and disables nested agent delegation. If the account cannot use this
 model, report the exact error and stop the Codex step. Do not substitute a
 model, lower the effort, switch accounts, or change authentication.
 
-Use Codex CLI 0.159.1+ and the account already logged into `codex`. See the [model and access
+Use an up-to-date Codex CLI and the account already logged into `codex`. See the [model and access
 notes](README.md#model-and-access) for the verified model settings and sources.
 
 ## Object or picture? Decide this first
@@ -80,7 +80,7 @@ Key flags:
 | `--revise "change"` | Change the existing object in `--out` instead of rebuilding. Attaches current renders so Sol sees what it is fixing |
 | `--render-only` | Re-render after editing `object.js` by hand |
 | `--input FILE` | Reference image (repeatable): a photo of the real thing, a site screenshot for palette |
-| `--model`, `--effort` | Locked to `gpt-6.1-sol` and `max`. Other values are rejected |
+| `--model`, `--effort` | Locked to `gpt-6.2-sol` and `max`. Other values are rejected |
 | `--size WxH`, `--bg HEX` | Render size (default 1536x1024) and background |
 | `--blender PATH` | Blender binary for `--format blender`, if it is not in the usual place |
 | `--json` | Machine-readable result including measured bounds, triangle count, part names |
@@ -276,7 +276,7 @@ SVG: inline the file (so ids are reachable) and animate the groups:
 - **Wrong scale** - state metres in the spec; `--revise "scale to 4.6 m long"`.
 - **Parts not exposed** - `--revise "expose <name> as a separate pivot group in userData.parts"`.
 - **Codex timed out** - raise `--timeout`; max reasoning on complex objects can take longer.
-- **Model unavailable or auth errors** - report the exact failure and check `codex --version`. GPT-6.1 Sol needs CLI 0.159.1+; 0.157.1 reported it unsupported even for accounts that could use it after updating. Keep `gpt-6.1-sol` and `max` pinned; do not change accounts or authentication to bypass an access failure.
+- **Model unavailable or auth errors** - report the exact failure and check `codex --version`. An outdated Codex CLI can report `gpt-6.2-sol` unsupported even for accounts that have access after updating. Keep `gpt-6.2-sol` and `max` pinned; do not change accounts or authentication to bypass an access failure.
 - **No Chrome found** - pass `--chrome PATH` (Google Chrome, Chromium or Canary). Chrome only renders; Codex does not need it.
 - **`Blender exited during startup` / `did not open its MCP port`** (`--format blender`) - the Blender MCP add-on is not installed or enabled (`mcp-for-blender install-addon`, then enable "Blender MCP" in Preferences), or there is no logged-in graphical session. Pass `--blender PATH` if Blender is not in the usual place.
 - **`Blender MCP server not found`** - put `mcp-for-blender` on `PATH` or set `CODEX_3D_BLENDER_MCP`. Do not use a launcher connected to an existing shared Blender. Verify that the MCP command honors the throwaway instance's requested port.

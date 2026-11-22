@@ -10,7 +10,7 @@ printf '%s' 'THE_TOKEN' | scripts/fleet secret set DISCORD_EXAMPLE_BOT_TOKEN --s
 DISCORD_TOKEN="$(scripts/fleet secret get DISCORD_EXAMPLE_BOT_TOKEN --scope personal)" npm run bot
 ```
 
-Scopes keep identities apart: a key belongs to the account or project that owns it, typically `personal` or `work`. `set` requires a note and refuses to overwrite a key unless you pass `--replace`; the replaced value is kept in `replaced/`. `list` prints scope, name, date and note, never values.
+Scopes keep identities apart: a key belongs to the account or project that owns it, typically `personal` or `work`. `set` requires a note and refuses to overwrite a key unless you pass `--replace`; the replaced value is kept in `replaced/`. `list` prints scope, name, date and note, never values. `fleet secret fingerprints` prints names, lengths and SHA-256 hashes (never values) for output redactors.
 
 The vault is files with Unix permissions on one machine you control. It is not encrypted at rest beyond what your disk provides, and anyone who can read your account's files can read it. Back it up the way you back up the rest of `state_dir`.
 

@@ -1,30 +1,23 @@
 # codex-3d
 
-Claude and GPT-6.1 Sol collaborate on real 3D objects and animatable SVG.
+Claude and GPT-6.2 Sol collaborate on real 3D objects and animatable SVG.
 Claude develops the brief and proposed approach, reviews renders independently,
 contributes source edits or targeted feedback, and integrates the result. Sol
 reasons through the geometry and implements or revises it. Outputs are a
 three.js module, a Blender-built GLB with its `.blend` source, or an SVG.
 
 The skill is active again. Every Codex build, revision and optional self-review
-uses **`gpt-6.1-sol` at `max` reasoning**, with no fallback. The default is one
+uses **`gpt-6.2-sol` at `max` reasoning**, with no fallback. The default is one
 build-and-render pass before returning to Claude. Both agents review the actual
 artifact against the same brief.
 
 ## Model and access
 
-OpenAI released GPT-6.1 Sol on September 29, 2026. Its model ID is
-`gpt-6.1-sol`, it accepts image inputs, and it supports `max` reasoning.
-OpenAI describes it as offering near-Astra performance for complex work at a
-lower cost. This does not establish a 3D-specific quality advantage.
-Sources: [model documentation](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
-and [release notes](https://developers.openai.com/api/docs/changelog).
-
-Use Codex CLI 0.159.1 or newer; that release added GPT-6.1 Sol to the bundled
-model catalog. See the [Codex changelog](https://learn.chatgpt.com/docs/changelog).
-An outdated CLI can return a misleading model-not-supported error. Verify the
-installed version and model access on your selected account before generating
-an asset. A successful model request does not establish 3D output quality.
+GPT-6.2 Sol accepts image inputs and supports `max` reasoning in Codex.
+The model ID is `gpt-6.2-sol`. Use an up-to-date Codex CLI that lists this
+model for the signed-in account.
+See the [model documentation](https://developers.openai.com/api/docs/models/gpt-6.2-sol)
+and [Codex model list](https://learn.chatgpt.com/docs/models).
 
 The wrapper uses the existing Codex login. If the model is reported unsupported,
 check `codex --version` before concluding that account access is missing.
@@ -35,7 +28,7 @@ another model or change authentication.
 
 These historical examples were built by GPT-6 Astra from the specs in
 `examples/*/spec.txt` at `--passes 2 --effort high`. They are preserved as
-examples of the output format, not evidence of GPT-6.1 Sol quality or speed.
+examples of the output format, not evidence of GPT-6.2 Sol quality or speed.
 Nothing was hand-edited; the first two were re-rendered afterwards.
 
 **3D car** (`examples/car/object.js`): 4.6 m long, rests on the ground, ten
@@ -100,7 +93,7 @@ Constraints: no text, no logos, symmetric, tyres touch y = 0, under 150k triangl
 | `--revise "change"` | Change the existing object; current renders are attached |
 | `--render-only` | Re-render after hand edits |
 | `--input FILE` | Reference image (repeatable) |
-| `--model`, `--effort` | Only `gpt-6.1-sol` and `max` are accepted |
+| `--model`, `--effort` | Only `gpt-6.2-sol` and `max` are accepted |
 | `--blender PATH` | Blender binary for `--format blender` (or `CODEX_3D_BLENDER`); the MCP server command can be set with `CODEX_3D_BLENDER_MCP` |
 | `--json` | Machine-readable result with measured bounds, triangles, parts |
 
@@ -160,7 +153,7 @@ budget.
 
 1. Copies `viewer.html` and `check.mjs` into the build folder, links
    `three` in for the check, and pipes a contract + your spec to
-   `codex exec --json -m gpt-6.1-sol -c 'model_reasoning_effort="max"' -s workspace-write -C <build-dir>`.
+   `codex exec --json -m gpt-6.2-sol -c 'model_reasoning_effort="max"' -s workspace-write -C <build-dir>`.
    Codex can only write inside that folder.
 2. Serves the folder on a throwaway local port and screenshots
    `viewer.html` with headless Chrome (`preview.png`, `sheet.png`). The
@@ -195,7 +188,7 @@ asset-library tools stay disabled.
 
 Historical Astra timings were about 6 minutes for the SVG car, 9 minutes for
 the 3D car and 12 minutes for the Blender car at `--passes 2 --effort high`.
-GPT-6.1 Sol at max has not been timed here.
+GPT-6.2 Sol at max has not been timed here.
 Different objects can run in parallel, Blender builds included, since each
 gets its own Blender.
 

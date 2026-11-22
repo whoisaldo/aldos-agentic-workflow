@@ -70,7 +70,7 @@ class WorkflowTests(unittest.TestCase):
 
     def assert_pinned(self):
         for args, _, _, _ in self.calls:
-            self.assertEqual(args[args.index("-m") + 1], "gpt-6.1-sol")
+            self.assertEqual(args[args.index("-m") + 1], "gpt-6.2-sol")
             self.assertIn('model_reasoning_effort="max"', args)
             disabled = [args[i + 1] for i, arg in enumerate(args) if arg == "--disable"]
             self.assertIn("multi_agent", disabled)
@@ -102,7 +102,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
         notes = Path(result["notes"]).read_text()
         self.assertIn("Built the requested parts", notes)
-        self.assertEqual(result["model"], "gpt-6.1-sol")
+        self.assertEqual(result["model"], "gpt-6.2-sol")
         self.assertEqual(result["effort"], "max")
 
     def test_model_and_effort_overrides_are_rejected_before_work(self):
