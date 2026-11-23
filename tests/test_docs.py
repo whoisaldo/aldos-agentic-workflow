@@ -109,6 +109,18 @@ class DocsTests(unittest.TestCase):
         self.assertTrue(HOME_PATH.search('/' + 'Users/someone/x'))
         self.assertFalse(HOME_PATH.search('~/Services/fleet'))
 
+    def test_claude_plugin_manifests_are_valid_and_agree(self):
+        import json
+        marketplace = json.loads((ROOT / '.claude-plugin/marketplace.json').read_text())
+        plugin = json.loads((ROOT / '.claude-plugin/plugin.json').read_text())
+        self.assertEqual(marketplace['name'], 'aldos-agentic-workflow')
+        self.assertEqual(len(marketplace['plugins']), 1)
+        entry = marketplace['plugins'][0]
+        self.assertEqual(entry['name'], plugin['name'])
+        self.assertEqual(entry['source'], './')
+        self.assertEqual(entry['version'], plugin['version'])
+        self.assertTrue((ROOT / 'skills/aldo-mode/SKILL.md').is_file())
+
 
 if __name__ == '__main__':
     unittest.main()

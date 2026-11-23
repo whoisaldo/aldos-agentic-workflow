@@ -1,0 +1,16 @@
+{
+  "name": "aldos-agentic-workflow",
+  "description": "Multi-account, multi-machine agentic coding workflow and skills by Ali (Aldo): coordinator + builder failover + cross-model reviews, Codex bridges, paging, secret vault, and pinned skill releases.",
+  "owner": {
+    "name": "Ali",
+    "url": "https://github.com/whoisaldo"
+  },
+  "plugins": [
+    {
+      "name": "aldo-workflow",
+      "source": "./",
+      "description": "Start with /aldo-mode and let it route to orchestrate-trifecta, task-to-review, design-taste-frontend, the Codex bridges, fleet-secrets, unslop, and the rest of the stack.",
+      "version": "1.0.0"
+    }
+  ]
+}

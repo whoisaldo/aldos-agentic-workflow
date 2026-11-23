@@ -1,0 +1,24 @@
+{
+  "name": "aldo-workflow",
+  "displayName": "Aldo's Agentic Workflow",
+  "version": "1.0.0",
+  "description": "Multi-account, multi-machine agentic coding stack: /aldo-mode front door, orchestrate-trifecta with usage failover and 70/30 GPT/Claude reviews, Codex bridges, vault, paging, and anti-slop UI and writing skills.",
+  "author": {
+    "name": "Ali",
+    "url": "https://github.com/whoisaldo"
+  },
+  "homepage": "https://github.com/whoisaldo/aldos-agentic-workflow",
+  "repository": "https://github.com/whoisaldo/aldos-agentic-workflow",
+  "license": "MIT",
+  "keywords": [
+    "agentic-workflow",
+    "aldo-mode",
+    "orchestrate-trifecta",
+    "claude-code",
+    "codex",
+    "t3-code",
+    "multi-agent",
+    "skills",
+    "unslop"
+  ]
+}
